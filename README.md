@@ -16,8 +16,8 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
   - 2: "Dis" (domino shapes)
   - 3: "Tris" (triomino shapes)
   - 4: "Tetris" (classic tetromino shapes)
-  - 5: "Pentis" (pentomino shapes - more challenging!)
-  - 6: "Hexis" (hexomino shapes - extremely challenging!)
+  - 5: "Pentis" (pentomino shapes - more challenging)
+  - 6: "Hexis" (hexomino shapes - extremely challenging, nearly unplayable)
 
 - **Interactive Menu**: Run without arguments to access a user-friendly curses-based menu for selecting game options
 
