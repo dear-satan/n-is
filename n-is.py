@@ -35,11 +35,10 @@ def show_menu(stdscr):
         stdscr.clear()
         
         # Title
-        stdscr.addstr(1, 2, "N-IS Game Configuration")
-        stdscr.addstr(2, 2, "Use arrow keys to navigate, Enter to select")
+        stdscr.addstr(1, 2, "Use arrow keys to navigate, Enter to select")
         
         # N selection
-        stdscr.addstr(4, 2, "Select number of blocks (n):")
+        stdscr.addstr(3, 2, "Select game:")
         for i, option in enumerate(n_options):
             prefix = "> " if i == selected_n else "  "
             game_names = ["Mono", "D", "Tr", "Tetr", "Pent", "Hex"]
@@ -69,8 +68,7 @@ def show_menu(stdscr):
         stdscr.clear()
         
         # Title
-        stdscr.addstr(1, 2, "N-IS Game Configuration")
-        stdscr.addstr(2, 2, "Use arrow keys to navigate, Enter to select")
+        stdscr.addstr(1, 2, "Use arrow keys to navigate, Enter to select")
         
         # Show selected n
         game_names = ["Mono", "D", "Tr", "Tetr", "Pent", "Hex"]
