@@ -23,7 +23,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 - **Fun Mode**: Enable extended mode with `-e` flag to add non-standard polyominos (that can connect at vertices) (they are also called pseudo-polyominos or polykings)
 
-- **Customizable Colors**: Choose your preferred block and background colors with `-c` and `-bc` flags
+- **Customizable Colors**: Choose your preferred block and background colors with `-c` and `-bc` flags, and change it in-game with j/k and u/i
 
 - **Traditional Gameplay**: Features standard mechanics like:
   - Line clearing
