@@ -17,10 +17,13 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
   - 3: "Tris" (triomino shapes)
   - 4: "Tetris" (classic tetromino shapes)
   - 5: "Pentis" (pentomino shapes - more challenging!)
+  - 6: "Hexis" (hexomino shapes - extremely challenging!)
+
+- **Interactive Menu**: Run without arguments to access a user-friendly curses-based menu for selecting game options
 
 - **Fun Mode**: Enable extended mode with `-e` flag to add non-standard polyominos (that can connect at vertices)
 
-- **Customizable**: Choose your preferred block color with -c flag
+- **Customizable Colors**: Choose your preferred block and background colors with `-c` and `-bc` flags
 
 - **Traditional Gameplay**: Features standard mechanics like:
   - Line clearing
@@ -30,20 +33,38 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 ## How to Run
 
+### Interactive Mode 
+
+Simply run the game without any arguments to access the interactive menu:
+
 ```bash
-python n-is.py <N> [-e] [-c COLOR]
+python n-is.py
+```
+
+This will launch a curses-based menu where you can:
+- Select the game type (Mono, Dis, Tris, Tetris, Pentis, or Hexis)
+- Choose whether to enable extended polyominos
+- Navigate with arrow keys and confirm with Enter
+- Quit the menu with 'q'
+
+### Command Line Mode
+
+For direct game launch with specific options:
+
+```bash
+python n-is.py <N> [-e] [-c COLOR] [-bc BACKGROUND_COLOR]
 ```
 
 or:
 
 ```bash
-py n-is.py <N> [-e] [-c COLOR]
+py n-is.py <N> [-e] [-c COLOR] [-bc BACKGROUND_COLOR]
 ```
 
 or:
 
 ```bash
-./executable/n-is <N> [-e] [-c COLOR]
+./executable/n-is <N> [-e] [-c COLOR] [-bc BACKGROUND_COLOR]
 ```
 
 It also can be compiled with:
@@ -61,7 +82,7 @@ python n-is.py -h
 
 ### Arguments:
 
-- `N`: Required - specifies the number of blocks (2-5)
+- `N`: Optional - specifies the number of blocks (1-6). If omitted, interactive menu will appear
 - `-e`: Optional - enables "fun" mode with additional shape variations
 - `-c`: Optional - specifies the block color:
   - `r`: red
@@ -71,13 +92,17 @@ python n-is.py -h
   - `m`: magenta
   - `c`: cyan
   - `w`: white (default)
+  - Numbers 0-255 are also accepted for extended color palette
+- `-bc`: Optional - specifies the background color (numbers 0-255 only)
 - `-h`: Shows help message
 ### Examples:
 
 ```bash
-python n-is.py 4        # Classic Tetris
-python n-is.py 3 -e     # Tris with extended polyminos
-python n-is.py 5 -c g   # Pentis with green blocks
+python n-is.py              # Interactive menu mode
+python n-is.py 4            # Classic Tetris
+python n-is.py 3 -e         # Tris with extended polyominos
+python n-is.py 5 -c g       # Pentis with green blocks
+python n-is.py 6 -c r -bc 4 # Hexis with red blocks on blue background
 ```
 
 ### Controls:
@@ -113,8 +138,8 @@ try increasing your terminal window size.
 
 ## Why I Created This
 
-I created N-is as an exploration of the Tetris concept, extending it to work with different polyomino sizes. This project demonstrates how the core mechanics of Tetris can be generalized, creating both simpler versions (Dis/Tris) and more complex versions (Pentis).
+I created N-is as an exploration of the Tetris concept, extending it to work with different polyomino sizes. This project demonstrates how the core mechanics of Tetris can be generalized, creating both simpler versions (Mono/Dis/Tris) and more complex versions (Pentis/Hexis).
 
-The "fun" mode with non-standard shapes adds another layer of challenge and demonstrates how breaking traditional polyomino rules can lead to harder gameplay
+The "fun" mode with non-standard shapes adds another layer of challenge and demonstrates how breaking traditional polyomino rules can lead to even more challenging gameplay.
 
 It also serves as a practical example of terminal-based game development using Python and the curses library, showing how to handle user input, game logic, and rendering in a text-based environment.
