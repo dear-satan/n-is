@@ -1,6 +1,6 @@
 # N-is: A Generalized Tetris Game
 
-N-is is a terminal-based puzzle game that generalizes the classic Tetris concept to work with polyominos of any size from 2 to 5 blocks. Play traditional Tetris (4 blocks) or experiment with Tris (3 blocks), Dis (2 blocks), or even challenging Pentis (5 blocks)!
+N-is is a terminal-based puzzle game that generalizes the classic Tetris concept to work with polyominos of any size from 2 to 5 blocks. Play traditional Tetris (4 blocks) or experiment with Tris (3 blocks), Dis (2 blocks), Pentis (5 blocks), or even Hexis!
 
 <figure>
     <img src="./example.png"
@@ -28,7 +28,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 - **Traditional Gameplay**: Features standard mechanics like:
   - Line clearing
   - Piece rotation
-  - Scoring based on lines cleared
+  - Scoring based on lines cleared and soft/hard drop
   - Increasing difficulty
 
 ## How to Run
@@ -140,6 +140,6 @@ try increasing your terminal window size.
 
 I created N-is as an exploration of the Tetris concept, extending it to work with different polyomino sizes. This project demonstrates how the core mechanics of Tetris can be generalized, creating both simpler versions (Mono/Dis/Tris) and more complex versions (Pentis/Hexis).
 
-The "fun" mode with non-standard shapes adds another layer of challenge and demonstrates how breaking traditional polyomino rules can lead to even more challenging gameplay.
+The extended mode lets us play with polykings and not only polyominos.
 
 It also serves as a practical example of terminal-based game development using Python and the curses library, showing how to handle user input, game logic, and rendering in a text-based environment.
