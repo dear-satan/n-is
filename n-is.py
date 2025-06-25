@@ -2,1460 +2,137 @@ import curses
 import random
 from math import floor
 import argparse as arg
+import polyshapes as ps
 
-parser = arg.ArgumentParser(description="Dis/Tris/Tetris/Pentis game implementation in Python using curses; use arrow keys to move blocks, 'q' to quit.")
+# constants
+BLOCK_CHAR = "█"
+BORDER_CHAR = "│"
+TOP_BOTTOM_BORDER_CHAR = "─"
+CORNER_CHAR = "┌┐└┘"
+GAME_NAMES = ["Mono", "D", "Tr", "Tetr", "Pent", "Hex"]
 
+# argument parsing
+parser = arg.ArgumentParser(description="Dis/Tris/Tetris/Pentis/Hexis game implementation in Python using curses; use arrow keys to move blocks, 'q' to quit.")
 parser.add_argument("n", type=int, nargs='?', help="specifies the number of blocks in the game; use 2 for Distris (2 block), 3 for Tris (3 blocks), 4 for Tetris (4 blocks), and 5 for Pentis (5 blocks), 6 for Hexis (6 blocks)")
 parser.add_argument("-e", action="store_true", help="enable 'fun' mode - additional pseudo-polyominos, also called polykings, its quite fun but also hard, only works for Dis, Tris and Tetris game,\
     there are 2 2-polykings, 6 3-polykings, 34 4-polykings and 166 5-polykings, but the game becomes unplayable with 166 pseudo-polyominos, so i only implemented up to 4-polykings")
 parser.add_argument("-c", type=str, help="specifies the color of the blocks; use 'r' for red, 'g' for green, 'b' for blue, 'y' for yellow, 'm' for magenta, 'c' for cyan, or 'w' for white.\
     You are able to change those colors with j/k keys for background and u/i keys for main color during game. Number 0-255 are accepted as well")
 parser.add_argument("-bc", type=int, help="same as -c, but for background color, only numbers accepted.")
+parser.add_argument("-m", action="store_true", help="enable mix mode, includes polyominos/polykings with less than n blocks")
 
 args = parser.parse_args()
 
+# global game state
 add_text = ""
 level = 0
 total_lines = 0
 next_shape = None
+held_shape = None
+can_hold = True
+combo_count = 0
+last_action_was_clear = False
 color, bcgd = curses.COLOR_WHITE, 0
+
+def show_option_menu(stdscr, title, options, option_texts, selected_info=""):
+    """Generic function to show a menu with options."""
+    selected = 0
+    while True:
+        stdscr.clear()
+        stdscr.addstr(1, 2, "Use arrow keys to navigate, Enter to select")
+        
+        if selected_info:
+            stdscr.addstr(4, 2, selected_info)
+            start_y = 6
+        else:
+            start_y = 3
+        
+        stdscr.addstr(start_y, 2, title)
+        for i, text in enumerate(option_texts):
+            prefix = "> " if i == selected else "  "
+            stdscr.addstr(start_y + 2 + i, 4, f"{prefix}{text}")
+        stdscr.refresh()
+        
+        key = stdscr.getch()
+        if key == ord('q') or key == ord('Q'):
+            return None
+        elif key == curses.KEY_UP:
+            selected = (selected - 1) % len(options)
+        elif key == curses.KEY_DOWN:
+            selected = (selected + 1) % len(options)
+        elif key == 10:  # Enter
+            return options[selected]
+        elif key >= ord('1') and key <= ord('9'):
+            n_value = key - ord('0')
+            if n_value <= len(options):
+                return options[n_value - 1]
 
 def show_menu(stdscr):
     """Show menu to select n and ext options."""
     curses.curs_set(0)
-    stdscr.clear()
     
+    # fselect n
     n_options = [1, 2, 3, 4, 5, 6]
+    n_texts = [f"{n} - {GAME_NAMES[i]}is" for i, n in enumerate(n_options)]
+    selected_n = show_option_menu(stdscr, "Select game:", n_options, n_texts)
+    if selected_n is None:
+        return None, None, None
+    
+    # select ext
     ext_options = [False, True]
+    ext_texts = ["No", "Yes"]
+    selected_info = f"Selected: {selected_n} - {GAME_NAMES[selected_n-1]}is"
+    selected_ext = show_option_menu(stdscr, "Enable extended polyominos:", ext_options, ext_texts, selected_info)
+    if selected_ext is None:
+        return None, None, None
     
-    selected_n = 0
-    
-    # First menu: select n
-    while True:
-        stdscr.clear()
-        
-        # Title
-        stdscr.addstr(1, 2, "Use arrow keys to navigate, Enter to select")
-        
-        # N selection
-        stdscr.addstr(3, 2, "Select game:")
-        for i, option in enumerate(n_options):
-            prefix = "> " if i == selected_n else "  "
-            game_names = ["Mono", "D", "Tr", "Tetr", "Pent", "Hex"]
-            stdscr.addstr(5 + i, 4, f"{prefix}{option} - {game_names[i]}is")
-        stdscr.refresh()
-        
-        key = stdscr.getch()
-        
-        if key == ord('q') or key == ord('Q'):
-            return None, None
-        elif key == curses.KEY_UP:
-            selected_n = (selected_n - 1) % len(n_options)
-        elif key == curses.KEY_DOWN:
-            selected_n = (selected_n + 1) % len(n_options)
-        elif key == 10:  # Enter
-            break
-        
-        elif key >= ord('1') and key <= ord('9'):
-            n_value = key - ord('0')
-            if n_value <= len(n_options):
-                selected_n = n_value - 1
-                break
-    
-    # Second menu: select ext
-    selected_ext = 0
-    while True:
-        stdscr.clear()
-        
-        # Title
-        stdscr.addstr(1, 2, "Use arrow keys to navigate, Enter to select")
-        
-        # Show selected n
-        game_names = ["Mono", "D", "Tr", "Tetr", "Pent", "Hex"]
-        stdscr.addstr(4, 2, f"Selected: {n_options[selected_n]} - {game_names[selected_n]}is")
-        
-        # Ext selection
-        stdscr.addstr(6, 2, "Enable extended polyominos:")
-        for i, option in enumerate(ext_options):
-            prefix = "> " if i == selected_ext else "  "
-            option_text = "Yes" if option else "No"
-            stdscr.addstr(7 + i, 4, f"{prefix}{option_text}")
-        stdscr.refresh()
-        
-        key = stdscr.getch()
-        
-        if key == ord('q') or key == ord('Q'):
-            return None, None
-        elif key == curses.KEY_UP:
-            selected_ext = (selected_ext - 1) % len(ext_options)
-        elif key == curses.KEY_DOWN:
-            selected_ext = (selected_ext + 1) % len(ext_options)
-        elif key == 10:  # Enter
-            return n_options[selected_n], ext_options[selected_ext]
+    # select mix
+    mix_options = [False, True]
+    mix_texts = ["No", "Yes"]
+    selected_mix = show_option_menu(stdscr, "Enable polyominos of lower order:", mix_options, mix_texts, selected_info)
+    return selected_n, selected_ext, selected_mix
 
+def initialize_shapes_and_dimensions():
+    """Initialize SHAPES, COLS, ROWS, name_of_game, and add_text based on args."""
+    global SHAPES, COLS, ROWS, name_of_game, add_text
+    
+    if not args.m:
+        SHAPES = ps.poly[2*args.n - 1] if args.e else ps.poly[2*args.n - 2]
+    else:
+        SHAPES = []
+        for k in range(1, 1+args.n):
+            SHAPES = SHAPES + ps.poly[2*k - 1] if args.e else SHAPES + ps.poly[2*k - 2]
+    
+    name_of_game = GAME_NAMES[args.n - 1] if 1 <= args.n <= 6 else "Mono"
+    add_text = "with extended polyominos" if args.e else ""
+    
+    e = args.n if args.e else 0
+    one = 1 if args.n == 1 else 0
+    m = -1 if args.m else 0
+    COLS = (3 * args.n) + e - 1 + one + m
+    ROWS = (5 * args.n) + e
+
+# initialize game settings
 if args.n is None:
-    # Show menu to select n and ext
+    # show menu to select n, ext and mix
     try:
-        selected_n, selected_ext = curses.wrapper(show_menu)
+        selected_n, selected_ext, selected_mix = curses.wrapper(show_menu)
         if selected_n is None:
             exit(0)
         args.n = selected_n
         args.e = selected_ext
+        args.m = selected_mix
     except curses.error as e:
         print("Error running curses menu.")
         print("Your terminal may not be supported.")
         print(f"Curses error: {e}")
         exit(1)
 
-if args.n < 2:
-    name_of_game = "mono"
-    SHAPES = [
-        [[1]],  # O
-    ]
-    if args.e:
-        SHAPES.append([[1, 0]]) # hidden one
 
-elif args.n == 2:
-    name_of_game = "D"
-    SHAPES = [
-        [[1, 1]],  # I
-    ]
-    
-    if args.e:
-        SHAPES.append([[1, 0], [0, 1]])
-
-elif args.n == 3:
-    name_of_game = "Tr"
-    SHAPES = [
-        [[1, 1, 1]],       # I
-        [[1, 0], [1, 1]],  # L
-    ]
-    
-    if args.e:
-        SHAPES.extend([
-            [[1, 0, 1], [0, 1, 0]],             # U
-            [[1, 0, 0], [0, 1, 1]],             # Z
-            [[0, 1, 1], [1, 0, 0]],             # F
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1]]   # \
-        ])
-
-elif args.n == 4:
-    name_of_game = "Tetr"
-    SHAPES = [
-        [[1, 1, 1, 1]],  # I
-        [[1, 1], [1, 1]],  # O
-        [[0, 1, 0], [1, 1, 1]],  # T
-        [[1, 0, 0], [1, 1, 1]],  # J
-        [[0, 0, 1], [1, 1, 1]],  # L
-        [[0, 1, 1], [1, 1, 0]],  # S
-        [[1, 1, 0], [0, 1, 1]],  # Z
-    ]
-    
-    if args.e:
-        SHAPES.extend([
-            [[1, 1, 1, 0], [0, 0, 0, 1]],                # 11
-            [[0, 0, 0, 1], [1, 1, 1, 0]],                # 12
-            [[1, 0, 1], [0, 1, 0], [0, 1, 0]],           # T (i know how this tetromino looks :sob:)
-            [[0, 0, 0, 1], [0, 0, 1, 0], [1, 1, 0, 0]],  # L1
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # L2
-            [[1, 1, 0, 1], [0, 0, 1, 0]],                # N1
-            [[0, 0, 1, 0], [1, 1, 0, 1]],                # N2
-            [[0, 1, 0], [1, 0, 1], [0, 1, 0]],           # X
-            [[0, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 0]],  # yes1
-            [[0, 1, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1]],  # yes2
-            [[1, 0, 1, 0], [0, 1, 0, 1]],                # snake1
-            [[0, 1, 0, 1], [1, 0, 1, 0]],                # snake2
-            [[1, 1, 0], [0, 0, 1], [0, 1, 0]],           # C1
-            [[0, 1, 0], [0, 0, 1], [1, 1, 0]],           # C2
-            [[0, 1, 0], [1, 1, 0], [0, 0, 1]],           # B12
-            [[0, 0, 1], [0, 1, 0], [1, 1, 0]],           # duck1/?1
-            [[1, 1, 0], [0, 1, 0], [0, 0, 1]],           # duck2/?2
-            [[1, 0, 1], [0, 1, 1]],                      # M1
-            [[0, 1, 1], [1, 0, 1]],                      # M2
-            [[0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0], [1, 0, 0, 0]], # this "thing"
-            [[0, 0, 1], [0, 1, 0], [1, 0, 1]],           # Y1, you would not believe how much time i spent on drawing those
-            [[1, 0, 1], [0, 1, 0], [0, 0, 1]],           # Y2
-            [[0, 0, 0, 1], [0, 1, 1, 0], [1, 0, 0, 0]],  # /
-            [[1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 0, 1]],  # \
-            [[1, 0, 0, 1], [0, 1, 1, 0]],                # bridge
-            [[0, 1, 1], [1, 0, 0], [1, 0, 0]],           # V1
-            [[0, 0, 1, 1], [1, 1, 0, 0]],                # \3
-        ])
-
-elif args.n == 5:
-    name_of_game = "Pent"
-    
-    SHAPES = [
-        [[0,0,1],[1,1,1],[0,0,1]], # One-Sided 5-polyomino 1
-        [[1,1],[1,1],[0,1]], # One-Sided 5-polyomino 2
-        [[1,1],[0,1],[0,1],[0,1]], # One-Sided 5-polyomino 3
-        [[1,1,0],[0,1,0],[0,1,1]], # One-Sided 5-polyomino 4
-        [[0,1],[1,1],[1,1]], # One-Sided 5-polyomino 5
-        [[0,1],[0,1],[1,1],[0,1]], # One-Sided 5-polyomino 6
-        [[0,1],[1,1],[0,1],[0,1]], # One-Sided 5-polyomino 7
-        [[0,1,1],[1,1,0],[0,1,0]], # One-Sided 5-polyomino 8
-        [[0,1,0],[1,1,1],[0,1,0]], # One-Sided 5-polyomino 9
-        [[0,1,0],[1,1,0],[0,1,1]], # One-Sided 5-polyomino 10
-        [[0,0,1],[0,1,1],[1,1,0]], # One-Sided 5-polyomino 11
-        [[0,1,1],[0,1,0],[1,1,0]], # One-Sided 5-polyomino 12
-        [[0,1],[0,1],[0,1],[1,1]], # One-Sided 5-polyomino 13
-        [[1],[1],[1],[1],[1]], # One-Sided 5-polyomino 14
-        [[0,1],[1,1],[1,0],[1,0]], # One-Sided 5-polyomino 15
-        [[1,1],[1,0],[1,1]], # One-Sided 5-polyomino 16
-        [[1,0],[1,0],[1,1],[0,1]], # One-Sided 5-polyomino 17
-        [[1,0,0],[1,0,0],[1,1,1]], # One-Sided 5-polyomino 18
-    ]
-    
-    if args.e:
-        add_text += "added 4-polykings instead of 5-polykings"
-        
-        SHAPES = [
-            [[1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, 1, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 1
-            [[0, 1, 0, 0, 0], [1, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 2
-            [[1, 1, 0, 0, 0], [0, 0, 1, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 3
-            [[1, 0, 0, 0, 0], [0, 1, 1, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 4
-            [[0, 1, 0, 0, 0], [1, 0, 1, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 5
-            [[0, 1, 1, 1, 0], [1, 0, 0, 0, 1]],  # One-sided 5-polyking 6
-            [[1, 0, 1, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 7
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 8
-            [[1, 0, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 9
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 10
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 11
-            [[1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 12
-            [[1, 0, 0, 0], [0, 1, 1, 0], [1, 0, 0, 1]],  # One-sided 5-polyking 13
-            [[1, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 14
-            [[1, 0, 1, 0], [0, 1, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 15
-            [[1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 16
-            [[1, 0, 0, 0], [0, 1, 1, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 17
-            [[1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 18
-            [[1, 1, 1, 0], [1, 0, 0, 1]],  # One-sided 5-polyking 19
-            [[0, 1, 0, 0], [1, 0, 1, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 20
-            [[0, 1, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 21
-            [[1, 1, 1, 0], [0, 1, 0, 1]],  # One-sided 5-polyking 22
-            [[0, 0, 1, 0], [1, 1, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 23
-            [[1, 1, 1, 0], [0, 0, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 24
-            [[0, 0, 0, 1], [1, 1, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 25
-            [[1, 1, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 26
-            [[1, 1, 1, 0, 1], [0, 0, 0, 1, 0]],  # One-sided 5-polyking 27
-            [[1, 1, 1, 0, 0], [0, 0, 0, 1, 1]],  # One-sided 5-polyking 28
-            [[1, 1, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 29
-            [[0, 1, 1, 0], [1, 0, 0, 1], [0, 1, 0, 0]],  # One-sided 5-polyking 30
-            [[0, 1, 1, 0], [1, 0, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 31
-            [[0, 1, 1, 1], [1, 0, 0, 1]],  # One-sided 5-polyking 32
-            [[0, 1, 1, 0], [1, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 33
-            [[0, 1, 1, 0, 0], [1, 0, 0, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 34
-            [[0, 0, 1, 0], [0, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 0]],  # One-sided 5-polyking 35
-            [[1, 0, 0], [1, 0, 0], [0, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 36
-            [[1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 37
-            [[1, 0, 0], [1, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 38
-            [[1, 0, 0], [0, 1, 1], [1, 0, 1]],  # One-sided 5-polyking 39
-            [[1, 0, 0], [0, 1, 0], [1, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 40
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0]],  # One-sided 5-polyking 41
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 42
-            [[0, 1, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 43
-            [[0, 1, 0], [1, 0, 0], [0, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 44
-            [[0, 1, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 45
-            [[1, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 46
-            [[1, 1, 0], [0, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 47
-            [[1, 1, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 48
-            [[1, 0, 0], [0, 1, 0], [0, 1, 1], [0, 1, 0]],  # One-sided 5-polyking 49
-            [[1, 0, 0], [0, 1, 1], [0, 1, 1]],  # One-sided 5-polyking 50
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0], [0, 1, 0]],  # One-sided 5-polyking 51
-            [[1, 0, 1], [0, 1, 0], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 52
-            [[1, 0, 0], [0, 1, 1], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 53
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 1]],  # One-sided 5-polyking 54
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 55
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 1, 0, 0]],  # One-sided 5-polyking 56
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 57
-            [[1, 0, 1], [0, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 58
-            [[1, 0, 1], [0, 1, 0], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 59
-            [[1, 0, 0], [0, 1, 1], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 60
-            [[1, 0, 0, 1], [0, 1, 1, 0], [0, 0, 1, 0]],  # One-sided 5-polyking 61
-            [[1, 0, 0, 0], [0, 1, 1, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 62
-            [[1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],  # One-sided 5-polyking 63
-            [[1, 0, 0, 0], [0, 1, 1, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 64
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 65
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 1, 1]],  # One-sided 5-polyking 66
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 67
-            [[1, 1, 1], [1, 0, 1]],  # One-sided 5-polyking 68
-            [[1, 1, 0], [1, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 69
-            [[1, 1, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 70
-            [[1, 1, 0], [0, 0, 1], [1, 1, 0]],  # One-sided 5-polyking 71
-            [[1, 1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 72
-            [[0, 1, 0], [1, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 73
-            [[0, 1, 0], [1, 1, 0], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 74
-            [[1, 1, 1], [0, 1, 1]],  # One-sided 5-polyking 75
-            [[1, 1, 0], [0, 0, 1], [0, 1, 0], [0, 1, 0]],  # One-sided 5-polyking 76
-            [[1, 1, 1], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 77
-            [[1, 1, 0], [0, 0, 1], [0, 1, 1]],  # One-sided 5-polyking 78
-            [[1, 1, 0, 0], [0, 0, 1, 1], [0, 1, 0, 0]],  # One-sided 5-polyking 79
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 1, 0, 1]],  # One-sided 5-polyking 80
-            [[1, 1, 0], [0, 0, 1], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 81
-            [[0, 0, 1], [1, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 82
-            [[1, 1, 1], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 83
-            [[0, 0, 0, 1], [1, 1, 1, 0], [0, 0, 1, 0]],  # One-sided 5-polyking 84
-            [[1, 1, 1, 0], [0, 0, 1, 1]],  # One-sided 5-polyking 85
-            [[1, 1, 1, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 86
-            [[1, 1, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 87
-            [[1, 1, 0, 0], [0, 0, 1, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 88
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 1, 1]],  # One-sided 5-polyking 89
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 90
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 91
-            [[1, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]],  # One-sided 5-polyking 92
-            [[1, 1, 0, 0, 1], [0, 0, 1, 1, 0]],  # One-sided 5-polyking 93
-            [[1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]],  # One-sided 5-polyking 94
-            [[1, 1, 0, 0, 0], [0, 0, 1, 0, 1], [0, 0, 0, 1, 0]],  # One-sided 5-polyking 95
-            [[1, 1, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 1, 1]],  # One-sided 5-polyking 96
-            [[1, 1, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]],  # One-sided 5-polyking 97
-            [[0, 1, 0], [1, 1, 1], [0, 1, 0]],  # One-sided 5-polyking 98
-            [[0, 1, 1], [1, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 99
-            [[0, 1, 0, 0], [1, 0, 1, 1], [0, 1, 0, 0]],  # One-sided 5-polyking 100
-            [[0, 1, 0], [1, 0, 1], [0, 0, 1], [0, 0, 1]],  # One-sided 5-polyking 101
-            [[0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 102
-            [[0, 1, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0]],  # One-sided 5-polyking 103
-            [[0, 0, 1], [0, 1, 0], [0, 0, 1], [1, 1, 0]],  # One-sided 5-polyking 104
-            [[0, 1, 0], [0, 0, 1], [1, 1, 1]],  # One-sided 5-polyking 105
-            [[0, 1, 0, 0], [0, 0, 1, 1], [1, 1, 0, 0]],  # One-sided 5-polyking 106
-            [[0, 1, 0, 0], [0, 0, 1, 0], [1, 1, 0, 1]],  # One-sided 5-polyking 107
-            [[0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 108
-            [[0, 1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 0]],  # One-sided 5-polyking 109
-            [[0, 1, 0], [0, 0, 1], [0, 1, 1], [1, 0, 0]],  # One-sided 5-polyking 110
-            [[0, 1, 0, 0], [0, 0, 1, 1], [0, 1, 0, 0], [1, 0, 0, 0]],  # One-sided 5-polyking 111
-            [[0, 1, 0, 0], [0, 0, 1, 0], [0, 1, 0, 1], [1, 0, 0, 0]],  # One-sided 5-polyking 112
-            [[1, 0], [1, 0], [1, 0], [0, 1], [1, 0]],  # One-sided 5-polyking 113
-            [[1, 0], [1, 0], [1, 0], [0, 1], [0, 1]],  # One-sided 5-polyking 114
-            [[1, 0], [1, 1], [1, 1]],  # One-sided 5-polyking 115
-            [[1, 0], [1, 0], [0, 1], [1, 0], [1, 0]],  # One-sided 5-polyking 116
-            [[0, 1], [1, 0], [1, 0], [0, 1], [1, 0]],  # One-sided 5-polyking 117
-            [[1, 0], [1, 0], [0, 1], [1, 1]],  # One-sided 5-polyking 118
-            [[1, 0], [1, 0], [0, 1], [1, 0], [0, 1]],  # One-sided 5-polyking 119
-            [[1, 0, 0], [1, 0, 0], [0, 1, 1], [1, 0, 0]],  # One-sided 5-polyking 120
-            [[0, 1], [1, 0], [1, 1], [0, 1]],  # One-sided 5-polyking 121
-            [[0, 1], [1, 0], [1, 0], [0, 1], [0, 1]],  # One-sided 5-polyking 122
-            [[1, 0], [1, 1], [0, 1], [0, 1]],  # One-sided 5-polyking 123
-            [[1, 0, 1], [1, 1, 0], [0, 1, 0]],  # One-sided 5-polyking 124
-            [[1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 125
-            [[1, 1], [0, 1], [1, 0], [1, 0]],  # One-sided 5-polyking 126
-            [[1, 0], [0, 1], [1, 1], [1, 0]],  # One-sided 5-polyking 127
-            [[1, 0], [0, 1], [1, 0], [1, 0], [0, 1]],  # One-sided 5-polyking 128
-            [[1, 0, 0], [0, 1, 1], [1, 0, 0], [1, 0, 0]],  # One-sided 5-polyking 129
-            [[1, 0, 0], [0, 1, 0], [1, 0, 1], [1, 0, 0]],  # One-sided 5-polyking 130
-            [[0, 1], [0, 1], [1, 0], [0, 1], [1, 0]],  # One-sided 5-polyking 131
-            [[0, 1], [1, 0], [0, 1], [1, 1]],  # One-sided 5-polyking 132
-            [[0, 1], [1, 0], [0, 1], [1, 0], [0, 1]],  # One-sided 5-polyking 133
-            [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 134
-            [[0, 1, 0], [1, 0, 1], [0, 1, 0], [1, 0, 0]],  # One-sided 5-polyking 135
-            [[0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 0, 0]],  # One-sided 5-polyking 136
-            [[1, 1], [0, 1], [1, 0], [0, 1]],  # One-sided 5-polyking 137
-            [[1, 1, 0], [0, 1, 1], [1, 0, 0]],  # One-sided 5-polyking 138
-            [[1, 0], [0, 1], [1, 1], [0, 1]],  # One-sided 5-polyking 139
-            [[1, 0, 0], [0, 1, 0], [1, 1, 1]],  # One-sided 5-polyking 140
-            [[1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 141
-            [[1, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 0]],  # One-sided 5-polyking 142
-            [[1, 0, 0], [0, 1, 1], [1, 0, 0], [0, 1, 0]],  # One-sided 5-polyking 143
-            [[1, 0, 0], [0, 1, 0], [1, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 144
-            [[1, 0, 0], [0, 1, 0], [1, 0, 0], [0, 1, 1]],  # One-sided 5-polyking 145
-            [[1, 0, 1], [0, 1, 1], [1, 0, 0]],  # One-sided 5-polyking 146
-            [[1, 0, 1], [0, 1, 0], [1, 0, 1]],  # One-sided 5-polyking 147
-            [[0, 1, 0], [0, 0, 1], [1, 1, 0], [0, 1, 0]],  # One-sided 5-polyking 148
-            [[1, 1, 0], [0, 1, 0], [0, 1, 1]],  # One-sided 5-polyking 149
-            [[1, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 150
-            [[0, 0, 1], [1, 1, 1], [0, 1, 0]],  # One-sided 5-polyking 151
-            [[0, 0, 1], [1, 1, 0], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 152
-            [[0, 0, 0, 1], [0, 0, 1, 0], [1, 1, 0, 0], [0, 1, 0, 0]],  # One-sided 5-polyking 153
-            [[0, 0, 1, 0], [1, 1, 0, 1], [0, 1, 0, 0]],  # One-sided 5-polyking 154
-            [[1, 0], [0, 1], [0, 1], [0, 1], [0, 1]],  # One-sided 5-polyking 155
-            [[1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 156
-            [[1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]],  # One-sided 5-polyking 157
-            [[1, 0, 1], [0, 1, 0], [0, 1, 0], [0, 0, 1]],  # One-sided 5-polyking 158
-            [[1, 0, 0], [0, 1, 0], [0, 1, 1], [0, 0, 1]],  # One-sided 5-polyking 159
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0]],  # One-sided 5-polyking 160
-            [[1, 1], [0, 1], [0, 1], [0, 1]],  # One-sided 5-polyking 161
-            [[0, 1], [0, 1], [0, 1], [1, 1]],  # One-sided 5-polyking 162
-            [[0, 1], [0, 1], [0, 1], [0, 1], [1, 0]],  # One-sided 5-polyking 163
-            [[1], [1], [1], [1], [1]],  # One-sided 5-polyking 164
-            [[1, 0], [1, 1], [1, 0], [1, 0]],  # One-sided 5-polyking 165
-            [[1, 0], [1, 0], [1, 1], [1, 0]],  # One-sided 5-polyking 166
-    ]
-
-elif args.n >= 6:
-    name_of_game = "Hex"
-    
-    if not args.e:
-        SHAPES = [
-            [[1],[1],[1],[1],[1],[1]], # One-Sided 6-polyomino 1
-            [[1,0],[1,0],[1,1],[1,0],[1,0]], # One-Sided 6-polyomino 2
-            [[1,0],[1,0],[1,0],[1,1],[1,0]], # One-Sided 6-polyomino 3
-            [[1,0],[1,0],[1,0],[1,0],[1,1]], # One-Sided 6-polyomino 4
-            [[1,0],[1,1],[1,0],[1,1]], # One-Sided 6-polyomino 5
-            [[1,0],[1,0],[1,1],[1,1]], # One-Sided 6-polyomino 6
-            [[1,0],[1,0],[1,0],[1,1],[0,1]], # One-Sided 6-polyomino 7
-            [[1,0,0],[1,0,0],[1,0,0],[1,1,1]], # One-Sided 6-polyomino 8
-            [[1,1],[1,1],[1,1]], # One-Sided 6-polyomino 9
-            [[1,1],[1,0],[1,1],[0,1]], # One-Sided 6-polyomino 10
-            [[1,1,1],[1,0,0],[1,1,0]], # One-Sided 6-polyomino 11
-            [[1,1,0],[1,0,0],[1,1,1]], # One-Sided 6-polyomino 12
-            [[1,0],[1,1],[1,1],[0,1]], # One-Sided 6-polyomino 13
-            [[1,0],[1,0],[1,1],[0,1],[0,1]], # One-Sided 6-polyomino 14
-            [[1,0,0],[1,0,0],[1,1,0],[0,1,1]], # One-Sided 6-polyomino 15
-            [[1,1,0],[1,1,0],[0,1,1]], # One-Sided 6-polyomino 16
-            [[1,0,0],[1,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyomino 17
-            [[1,0,1],[1,1,1],[0,0,1]], # One-Sided 6-polyomino 18
-            [[1,1],[0,1],[0,1],[1,1]], # One-Sided 6-polyomino 19
-            [[1,1,0],[0,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyomino 20
-            [[1,1,1,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyomino 21
-            [[0,1],[1,1],[1,1],[1,0]], # One-Sided 6-polyomino 22
-            [[0,1],[1,1],[1,0],[1,1]], # One-Sided 6-polyomino 23
-            [[0,1],[1,1],[1,1],[0,1]], # One-Sided 6-polyomino 24
-            [[0,1,1],[1,1,0],[1,1,0]], # One-Sided 6-polyomino 25
-            [[0,0,1],[1,1,1],[1,0,1]], # One-Sided 6-polyomino 26
-            [[0,1],[1,1],[0,1],[1,1]], # One-Sided 6-polyomino 27
-            [[0,1,1],[1,1,0],[0,1,0],[0,1,0]], # One-Sided 6-polyomino 28
-            [[0,1,0],[1,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyomino 29
-            [[0,1,0],[1,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyomino 30
-            [[0,1,1],[1,1,1],[0,1,0]], # One-Sided 6-polyomino 31
-            [[0,1,1],[1,1,0],[0,1,1]], # One-Sided 6-polyomino 32
-            [[0,1,1,1],[1,1,0,0],[0,1,0,0]], # One-Sided 6-polyomino 33
-            [[0,1,0],[1,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyomino 34
-            [[0,1,0,0],[1,1,0,0],[0,1,1,1]], # One-Sided 6-polyomino 35
-            [[0,1,1],[1,1,1],[0,0,1]], # One-Sided 6-polyomino 36
-            [[0,0,1],[1,1,1],[0,1,1]], # One-Sided 6-polyomino 37
-            [[0,0,1],[1,1,1],[0,0,1],[0,0,1]], # One-Sided 6-polyomino 38
-            [[0,0,1,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyomino 39
-            [[0,0,1,0],[1,1,1,1],[0,0,1,0]], # One-Sided 6-polyomino 40
-            [[0,0,1,0],[1,1,1,0],[0,0,1,1]], # One-Sided 6-polyomino 41
-            [[0,0,0,1],[1,1,1,1],[0,0,0,1]], # One-Sided 6-polyomino 42
-            [[0,1],[0,1],[1,1],[1,0],[1,0]], # One-Sided 6-polyomino 43
-            [[0,1],[0,1],[1,1],[1,1]], # One-Sided 6-polyomino 44
-            [[0,0,1],[0,1,1],[1,1,0],[1,0,0]], # One-Sided 6-polyomino 45
-            [[0,1,0],[0,1,1],[1,1,0],[0,1,0]], # One-Sided 6-polyomino 46
-            [[0,1,0],[0,1,0],[1,1,0],[0,1,1]], # One-Sided 6-polyomino 47
-            [[0,1,1,1],[0,1,0,0],[1,1,0,0]], # One-Sided 6-polyomino 48
-            [[0,0,1],[0,1,1],[1,1,0],[0,1,0]], # One-Sided 6-polyomino 49
-            [[0,0,1],[0,1,1],[1,1,1]], # One-Sided 6-polyomino 50
-            [[0,0,1,1],[0,1,1,0],[1,1,0,0]], # One-Sided 6-polyomino 51
-            [[0,0,1],[0,0,1],[1,1,1],[0,0,1]], # One-Sided 6-polyomino 52
-            [[0,1],[0,1],[0,1],[1,1],[1,0]], # One-Sided 6-polyomino 53
-            [[0,1],[0,1],[0,1],[1,1],[0,1]], # One-Sided 6-polyomino 54
-            [[0,1,1],[0,1,0],[0,1,0],[1,1,0]], # One-Sided 6-polyomino 55
-            [[0,1,0],[0,1,1],[0,1,0],[1,1,0]], # One-Sided 6-polyomino 56
-            [[0,0,1],[0,1,1],[0,1,0],[1,1,0]], # One-Sided 6-polyomino 57
-            [[0,0,1],[0,0,1],[0,1,1],[1,1,0]], # One-Sided 6-polyomino 58
-            [[0,0,1],[0,0,1],[0,0,1],[1,1,1]], # One-Sided 6-polyomino 59
-            [[0,1],[0,1],[0,1],[0,1],[1,1]], # One-Sided 6-polyomino 60
-        ]
-    else:
-        SHAPES = [
-            [[1,1,0,0,0,0],[0,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 1
-            [[1,0,1,0,0,0],[0,1,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 2
-            [[1,0,0,0,0,0],[0,1,1,0,0,0],[0,0,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 3
-            [[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,1,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 4
-            [[0,0,1,0,0,0],[1,1,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 5
-            [[1,1,1,0,0,0],[0,0,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 6
-            [[1,0,1,0,0,0],[0,1,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 7
-            [[0,0,1,0,0,0],[0,1,0,1,0,0],[1,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 8
-            [[0,1,1,0,0,0],[1,0,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 9
-            [[0,0,1,0,0,0],[1,1,0,1,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 10
-            [[1,0,1,1,1,0],[0,1,0,0,0,1]], # One-Sided 6-polyking 11
-            [[0,0,1,0,0,0],[0,1,0,1,1,0],[1,0,0,0,0,1]], # One-Sided 6-polyking 12
-            [[0,0,1,1,1,0],[0,1,0,0,0,1],[1,0,0,0,0,0]], # One-Sided 6-polyking 13
-            [[1,0,0,0,0],[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 14
-            [[1,0,0,0,0],[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 15
-            [[1,0,0,0,0],[0,1,0,1,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 16
-            [[1,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 17
-            [[1,0,0,0,0],[1,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 18
-            [[1,0,0,0,0],[0,1,0,0,0],[1,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 19
-            [[0,1,0,0,0],[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 20
-            [[1,1,0,1,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 21
-            [[1,0,0,0,0],[0,1,0,0,0],[0,1,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 22
-            [[1,0,0,0,0],[0,1,1,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 23
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 24
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,1],[0,0,0,0,1]], # One-Sided 6-polyking 25
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 26
-            [[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,1,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 27
-            [[0,1,0,0,0],[1,0,1,0,0],[1,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 28
-            [[1,0,0,0,0],[0,1,1,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 29
-            [[0,1,0,0,0],[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 30
-            [[0,1,0,0,0],[1,1,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 31
-            [[0,1,0,0,0],[1,0,1,0,0],[0,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 32
-            [[0,1,0,0,0],[1,0,0,0,0],[0,1,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 33
-            [[0,0,1,0,0],[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 34
-            [[0,1,1,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 35
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 36
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 37
-            [[0,1,0,1,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 38
-            [[0,1,0,0,0],[1,0,1,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 39
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 40
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 41
-            [[0,1,0,0,0],[1,0,1,0,1],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 42
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,1],[0,0,0,0,1]], # One-Sided 6-polyking 43
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 44
-            [[0,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 45
-            [[0,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 46
-            [[0,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 47
-            [[1,1,0,0,0],[0,0,1,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 48
-            [[0,0,1,0,0],[1,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 49
-            [[1,1,1,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 50
-            [[1,1,0,0,0],[0,0,1,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 51
-            [[1,1,0,0,0],[0,0,1,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 52
-            [[1,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 53
-            [[1,1,0,0,1],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 54
-            [[1,1,0,0,0],[0,0,1,1,1],[0,0,0,0,1]], # One-Sided 6-polyking 55
-            [[1,1,0,0,0],[0,0,1,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 56
-            [[1,1,0,0,0,0],[0,0,1,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 57
-            [[1,1,0,0,0,0],[0,0,1,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 58
-            [[1,0,0,0,0],[0,1,1,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 59
-            [[1,0,1,0,0],[0,1,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 60
-            [[1,0,0,0,0],[0,1,1,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 61
-            [[1,0,0,0,0],[0,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 62
-            [[1,0,0,0,0,0],[0,1,1,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 63
-            [[1,0,0,0,0,0],[0,1,1,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 64
-            [[0,1,0,0,0],[1,0,1,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 65
-            [[0,1,0,0,0],[1,1,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 66
-            [[0,1,0,0,0],[1,0,1,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 67
-            [[0,1,0,1,0],[1,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 68
-            [[0,1,0,0,0],[1,0,1,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 69
-            [[0,1,0,0,0],[1,0,1,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 70
-            [[0,1,0,0,1],[1,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 71
-            [[0,1,0,0,0],[1,0,1,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 72
-            [[0,1,0,0,0,0],[1,0,1,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 73
-            [[0,1,0,0,0,0],[1,0,1,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 74
-            [[0,1,0,0,0,0],[1,0,1,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 75
-            [[0,0,1,0,0],[1,1,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 76
-            [[1,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 77
-            [[1,1,1,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 78
-            [[1,0,1,1,0],[0,1,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 79
-            [[1,0,1,1,1],[0,1,0,0,1]], # One-Sided 6-polyking 80
-            [[1,0,1,1,0],[0,1,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 81
-            [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,0]], # One-Sided 6-polyking 82
-            [[0,1,1,1,0],[1,1,0,0,1]], # One-Sided 6-polyking 83
-            [[0,1,1,1,0],[1,0,0,0,1],[0,1,0,0,0]], # One-Sided 6-polyking 84
-            [[0,0,1,0,0],[0,1,0,1,1],[1,0,0,0,1]], # One-Sided 6-polyking 85
-            [[0,0,1,0,0],[0,1,0,1,0],[1,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 86
-            [[0,1,1,1,0],[1,0,1,0,1]], # One-Sided 6-polyking 87
-            [[0,0,0,1,0],[0,1,1,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 88
-            [[0,1,1,1,0],[1,0,0,1,1]], # One-Sided 6-polyking 89
-            [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 90
-            [[0,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 91
-            [[0,1,1,1,1],[1,0,0,0,1]], # One-Sided 6-polyking 92
-            [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 93
-            [[0,1,1,1,0,1],[1,0,0,0,1,0]], # One-Sided 6-polyking 94
-            [[0,1,1,1,0,0],[1,0,0,0,1,1]], # One-Sided 6-polyking 95
-            [[0,1,1,1,0,0],[1,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 96
-            [[0,0,1,1,0],[1,1,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 97
-            [[0,0,0,1,0],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0]], # One-Sided 6-polyking 98
-            [[0,0,1,1,1],[0,1,0,0,1],[1,0,0,0,0]], # One-Sided 6-polyking 99
-            [[0,0,1,1,0],[0,1,0,0,1],[1,0,0,0,1]], # One-Sided 6-polyking 100
-            [[0,0,0,1,0],[0,0,0,0,1],[1,1,0,1,0],[0,0,1,0,0]], # One-Sided 6-polyking 101
-            [[1,0,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 102
-            [[1,0,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 103
-            [[1,0,0,0,0],[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 104
-            [[1,0,1,0],[1,1,0,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 105
-            [[1,0,0,0],[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 106
-            [[1,0,0,0],[1,1,0,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 107
-            [[1,0,0,0],[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 108
-            [[1,0,0,0],[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 109
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 110
-            [[1,1,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 111
-            [[1,0,1,0],[0,1,0,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 112
-            [[1,0,0,0],[0,1,0,0],[0,1,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 113
-            [[1,0,0,0],[0,1,0,0],[0,1,1,1],[0,0,0,1]], # One-Sided 6-polyking 114
-            [[1,0,0,0,0],[0,1,0,0,0],[0,1,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 115
-            [[1,0,1,0],[0,1,0,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 116
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 117
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 118
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 119
-            [[1,0,1,0],[0,1,0,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 120
-            [[1,0,1,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 121
-            [[1,0,1,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 122
-            [[1,0,1,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,1]], # One-Sided 6-polyking 123
-            [[1,0,1,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 124
-            [[1,0,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 125
-            [[1,0,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 126
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 127
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 128
-            [[1,0,0,0],[0,1,0,1],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 129
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 130
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 131
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 132
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,1],[0,0,1,0,0]], # One-Sided 6-polyking 133
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 134
-            [[1,0,0,0],[0,1,0,1],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 135
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 136
-            [[1,0,0,0,0],[0,1,0,0,1],[0,0,1,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 137
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 138
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 139
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 140
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 141
-            [[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 142
-            [[1,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 143
-            [[1,0,1,0],[1,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 144
-            [[1,0,0,0],[1,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 145
-            [[1,0,0,0,0],[1,1,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 146
-            [[0,1,0,0],[1,0,0,0],[0,1,1,0],[1,0,0,1]], # One-Sided 6-polyking 147
-            [[1,0,0,0],[0,1,1,0],[1,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 148
-            [[1,0,0,0],[0,1,1,1],[1,0,0,1]], # One-Sided 6-polyking 149
-            [[1,0,0,0],[0,1,1,0],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 150
-            [[1,0,0,0,0],[0,1,1,0,0],[1,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 151
-            [[0,1,0,0],[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 152
-            [[0,1,0,0],[1,0,0,0],[0,1,1,1],[0,0,0,1]], # One-Sided 6-polyking 153
-            [[0,1,0,0],[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 154
-            [[1,1,1,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 155
-            [[1,1,0,0],[0,1,1,1],[0,0,0,1]], # One-Sided 6-polyking 156
-            [[1,1,0,0],[0,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 157
-            [[1,1,0,0],[0,0,1,0],[0,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 158
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 159
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 160
-            [[0,0,1,0],[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 161
-            [[1,1,1,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 162
-            [[1,1,1,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 163
-            [[1,1,0,0],[0,0,1,0],[0,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 164
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 165
-            [[1,1,0,1],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 166
-            [[1,1,0,0],[0,0,1,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 167
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 168
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 169
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,1],[0,0,1,0,0]], # One-Sided 6-polyking 170
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 171
-            [[1,1,0,1],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 172
-            [[1,1,0,0],[0,0,1,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 173
-            [[1,1,0,0,1],[0,0,1,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 174
-            [[1,1,0,0,0],[0,0,1,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 175
-            [[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 176
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 177
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 178
-            [[1,0,1,0],[0,1,1,0],[0,1,0,1]], # One-Sided 6-polyking 179
-            [[1,0,0,0],[0,1,1,0],[0,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 180
-            [[1,0,0,0,0],[0,1,1,0,0],[0,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 181
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 182
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 183
-            [[1,0,1,0],[0,1,1,1],[0,0,0,1]], # One-Sided 6-polyking 184
-            [[1,0,1,0],[0,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 185
-            [[1,0,0,0],[0,1,1,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 186
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 187
-            [[1,0,0,0],[0,1,1,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 188
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 189
-            [[1,0,0,0,0],[0,1,1,0,0],[0,0,0,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 190
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 191
-            [[1,0,0,1],[0,1,1,1],[0,0,0,1]], # One-Sided 6-polyking 192
-            [[1,0,0,1],[0,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 193
-            [[1,0,0,0],[0,1,1,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 194
-            [[1,0,0,0,1],[0,1,1,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 195
-            [[1,0,0,0],[0,1,1,0],[0,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 196
-            [[1,0,0,0,0],[0,1,1,0,1],[0,0,0,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 197
-            [[1,0,0,0,0],[0,1,1,0,0],[0,0,0,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 198
-            [[1,0,0,0,0],[0,1,1,0,0],[0,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 199
-            [[1,0,0,0,0],[0,1,1,0,0],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 200
-            [[1,0,0,0,0,0],[0,1,1,0,0,0],[0,0,0,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 201
-            [[1,0,0,0,0,0],[0,1,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 202
-            [[0,1,0,0],[1,0,1,1],[1,0,0,1]], # One-Sided 6-polyking 203
-            [[0,1,0,0],[1,0,1,0],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 204
-            [[1,1,1,0],[1,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 205
-            [[1,1,1,0],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 206
-            [[1,1,1,0,1],[1,0,0,1,0]], # One-Sided 6-polyking 207
-            [[1,1,1,0,0],[1,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 208
-            [[0,1,0,0],[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 209
-            [[0,1,0,0],[1,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 210
-            [[0,1,0,0,0],[1,1,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 211
-            [[0,1,0,0],[1,0,1,0],[0,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 212
-            [[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 213
-            [[0,1,1,0],[1,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 214
-            [[0,1,1,0],[1,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 215
-            [[0,1,0,0],[1,0,1,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 216
-            [[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 217
-            [[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 218
-            [[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 219
-            [[0,1,0,1],[1,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 220
-            [[0,1,0,0],[1,0,1,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 221
-            [[0,1,0,0,1],[1,0,1,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 222
-            [[0,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 223
-            [[0,1,0,0,0],[1,0,1,0,1],[0,0,0,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 224
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 225
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 226
-            [[1,1,1,0],[0,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 227
-            [[1,1,1,0,1],[0,1,0,1,0]], # One-Sided 6-polyking 228
-            [[1,1,1,0,0],[0,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 229
-            [[1,1,1,0],[0,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 230
-            [[1,1,1,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 231
-            [[0,0,1,0],[1,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 232
-            [[0,0,1,0,0],[1,1,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 233
-            [[0,0,1,0,0],[1,1,1,0,0],[0,0,0,1,1]], # One-Sided 6-polyking 234
-            [[1,1,1,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 235
-            [[1,1,1,0,1],[0,0,1,1,0]], # One-Sided 6-polyking 236
-            [[1,1,1,0,0],[0,0,1,1,1]], # One-Sided 6-polyking 237
-            [[1,1,1,0],[0,0,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 238
-            [[0,0,0,1],[1,1,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 239
-            [[1,1,1,0],[0,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 240
-            [[1,1,1,0,1],[0,0,0,1,0],[0,0,1,0,0]], # One-Sided 6-polyking 241
-            [[1,1,1,0,0],[0,0,0,1,1],[0,0,1,0,0]], # One-Sided 6-polyking 242
-            [[1,1,1,0,0],[0,0,0,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 243
-            [[1,1,1,0],[0,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 244
-            [[0,0,0,1],[1,1,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 245
-            [[0,0,0,1,0],[1,1,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 246
-            [[1,1,1,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 247
-            [[0,0,0,0,1],[1,1,1,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 248
-            [[1,1,1,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 249
-            [[1,1,1,0],[0,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 250
-            [[1,1,1,0,1],[0,0,0,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 251
-            [[1,1,1,0,0],[0,0,0,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 252
-            [[1,1,1,0,0],[0,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 253
-            [[1,1,1,0,0],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 254
-            [[1,1,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 255
-            [[0,0,0,0,1],[1,1,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 256
-            [[1,1,1,0,1],[0,0,0,1,1]], # One-Sided 6-polyking 257
-            [[1,1,1,0,1],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 258
-            [[0,0,0,0,0,1],[1,1,1,0,1,0],[0,0,0,1,0,0]], # One-Sided 6-polyking 259
-            [[1,1,1,0,1,1],[0,0,0,1,0,0]], # One-Sided 6-polyking 260
-            [[1,1,1,0,1,0],[0,0,0,1,0,1]], # One-Sided 6-polyking 261
-            [[1,1,1,0,0],[0,0,0,1,1],[0,0,0,0,1]], # One-Sided 6-polyking 262
-            [[1,1,1,0,0,1],[0,0,0,1,1,0]], # One-Sided 6-polyking 263
-            [[1,1,1,0,0,0],[0,0,0,1,1,1]], # One-Sided 6-polyking 264
-            [[1,1,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 265
-            [[1,1,1,0,0,0],[0,0,0,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 266
-            [[1,1,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 267
-            [[0,1,1,1],[1,0,0,1],[1,0,0,0]], # One-Sided 6-polyking 268
-            [[0,1,1,0],[1,0,0,1],[1,0,0,1]], # One-Sided 6-polyking 269
-            [[0,1,0,0],[0,0,1,0],[1,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 270
-            [[0,1,0,0],[0,0,1,0],[1,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 271
-            [[0,1,1,1],[1,1,0,1]], # One-Sided 6-polyking 272
-            [[0,1,1,0],[1,1,0,1],[0,0,0,1]], # One-Sided 6-polyking 273
-            [[0,1,1,0,0],[1,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 274
-            [[0,1,1,0],[1,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 275
-            [[0,1,1,1],[1,0,0,1],[0,1,0,0]], # One-Sided 6-polyking 276
-            [[0,1,1,0],[1,0,0,1],[0,1,0,1]], # One-Sided 6-polyking 277
-            [[0,1,1,0,0],[1,0,0,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 278
-            [[0,1,1,0],[1,0,0,1],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 279
-            [[0,0,1,0],[0,1,1,1],[1,0,0,1]], # One-Sided 6-polyking 280
-            [[0,0,1,0],[0,1,1,0],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 281
-            [[0,1,1,1],[1,0,1,1]], # One-Sided 6-polyking 282
-            [[0,1,1,0],[1,0,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 283
-            [[0,1,1,1],[1,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 284
-            [[0,1,1,0],[1,0,0,1],[0,0,1,1]], # One-Sided 6-polyking 285
-            [[0,1,1,0,0],[1,0,0,1,1],[0,0,1,0,0]], # One-Sided 6-polyking 286
-            [[0,1,1,0,0],[1,0,0,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 287
-            [[0,1,1,0],[1,0,0,1],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 288
-            [[0,0,0,1],[0,1,1,1],[1,0,0,1]], # One-Sided 6-polyking 289
-            [[0,0,0,1],[0,1,1,0],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 290
-            [[0,1,1,1],[1,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 291
-            [[0,0,0,0,1],[0,1,1,1,0],[1,0,0,1,0]], # One-Sided 6-polyking 292
-            [[0,1,1,1,1],[1,0,0,1,0]], # One-Sided 6-polyking 293
-            [[0,1,1,1,0],[1,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 294
-            [[0,1,1,0],[1,0,0,1],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 295
-            [[0,1,1,0,1],[1,0,0,1,0],[0,0,0,1,0]], # One-Sided 6-polyking 296
-            [[0,1,1,0,0],[1,0,0,1,1],[0,0,0,1,0]], # One-Sided 6-polyking 297
-            [[0,1,1,0,0],[1,0,0,1,0],[0,0,0,1,1]], # One-Sided 6-polyking 298
-            [[0,1,1,0,0],[1,0,0,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 299
-            [[0,1,1,0,0],[1,0,0,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 300
-            [[0,1,1,0,0,1],[1,0,0,1,1,0]], # One-Sided 6-polyking 301
-            [[0,1,1,0,0],[1,0,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 302
-            [[0,1,1,0,0,0],[1,0,0,1,0,1],[0,0,0,0,1,0]], # One-Sided 6-polyking 303
-            [[0,1,1,0,0,0],[1,0,0,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 304
-            [[0,1,1,0,0,0],[1,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 305
-            [[0,0,1,0],[1,0,0,1],[0,1,1,0],[0,1,0,0]], # One-Sided 6-polyking 306
-            [[0,0,1,0],[0,0,1,0],[1,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 307
-            [[0,0,0,1],[0,0,1,0],[1,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 308
-            [[0,0,1,0],[1,0,0,1],[0,1,1,1]], # One-Sided 6-polyking 309
-            [[0,0,1,0,0],[1,0,0,1,1],[0,1,1,0,0]], # One-Sided 6-polyking 310
-            [[0,0,1,0,0],[1,0,0,1,0],[0,1,1,0,1]], # One-Sided 6-polyking 311
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,1]], # One-Sided 6-polyking 312
-            [[0,1,0,0],[0,0,1,0],[0,0,0,1],[1,1,1,0]], # One-Sided 6-polyking 313
-            [[0,1,0,0],[0,0,1,0],[0,0,0,1],[1,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 314
-            [[0,1,1,0],[0,1,0,1],[1,0,0,1]], # One-Sided 6-polyking 315
-            [[0,1,1,0,0],[0,1,0,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 316
-            [[0,1,1,0],[0,0,0,1],[1,1,1,0]], # One-Sided 6-polyking 317
-            [[0,1,1,0],[0,0,0,1],[1,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 318
-            [[0,0,1,0],[0,0,0,1],[1,1,1,0],[0,1,0,0]], # One-Sided 6-polyking 319
-            [[0,0,1,0],[0,0,1,0],[0,0,0,1],[1,1,1,0]], # One-Sided 6-polyking 320
-            [[0,0,0,1],[0,0,1,0],[0,0,0,1],[1,1,1,0]], # One-Sided 6-polyking 321
-            [[0,0,1,0],[0,0,1,0],[0,0,0,1],[1,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 322
-            [[0,0,1,0],[0,0,0,1],[1,0,1,0],[0,1,1,0]], # One-Sided 6-polyking 323
-            [[0,0,1,0],[0,0,0,1],[1,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 324
-            [[0,0,1,0,1],[0,0,0,1,0],[1,0,1,0,0],[0,1,0,0,0]], # One-Sided 6-polyking 325
-            [[0,0,1,0,0],[0,0,0,1,0],[1,0,1,0,1],[0,1,0,0,0]], # One-Sided 6-polyking 326
-            [[0,1,0,0],[0,0,1,0],[0,0,0,1],[0,1,1,0],[1,0,0,0]], # One-Sided 6-polyking 327
-            [[0,1,1,0],[0,0,0,1],[0,1,1,0],[1,0,0,0]], # One-Sided 6-polyking 328
-            [[0,0,1,0],[0,0,1,0],[0,0,0,1],[0,1,1,0],[1,0,0,0]], # One-Sided 6-polyking 329
-            [[0,0,0,1],[0,0,1,0],[0,0,0,1],[0,1,1,0],[1,0,0,0]], # One-Sided 6-polyking 330
-            [[0,0,1,0],[0,0,0,1],[0,1,1,1],[1,0,0,0]], # One-Sided 6-polyking 331
-            [[0,0,1,0,0],[0,0,0,1,0],[0,1,1,0,1],[1,0,0,0,0]], # One-Sided 6-polyking 332
-            [[0,0,1,0,0],[0,0,0,1,0],[0,0,1,0,1],[1,1,0,0,0]], # One-Sided 6-polyking 333
-            [[1,0,0],[0,1,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 334
-            [[1,0,0],[0,1,0],[0,1,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 335
-            [[1,0,0],[1,0,0],[1,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 336
-            [[1,0,0],[1,0,0],[0,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 337
-            [[0,1,0],[1,0,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 338
-            [[1,0,0],[1,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 339
-            [[1,0,0],[1,0,0],[0,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 340
-            [[1,0,0],[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 341
-            [[1,0,0,0],[1,0,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 342
-            [[1,0,0,0],[1,0,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 343
-            [[1,0,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 344
-            [[1,0,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 345
-            [[1,0,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 346
-            [[1,0,0],[0,1,0],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 347
-            [[1,1,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 348
-            [[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 349
-            [[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 350
-            [[1,0,0,0],[0,1,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 351
-            [[1,0,0,0],[0,1,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 352
-            [[1,0,0],[1,1,1],[1,0,1]], # One-Sided 6-polyking 353
-            [[1,0,0],[1,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 354
-            [[1,0,0,0],[1,1,0,0],[1,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 355
-            [[1,0,0],[1,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 356
-            [[0,1,0],[1,0,0],[1,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 357
-            [[0,1,0],[1,0,0],[1,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 358
-            [[1,1,0],[1,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 359
-            [[1,1,0],[1,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 360
-            [[1,0,1],[1,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 361
-            [[1,0,0],[1,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 362
-            [[1,0,0],[1,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 363
-            [[1,0,0],[1,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 364
-            [[1,0,0,0],[1,1,0,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 365
-            [[1,0,0,0],[1,1,0,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 366
-            [[1,0,0],[1,1,0],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 367
-            [[1,0,0],[1,1,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 368
-            [[1,0,0,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 369
-            [[1,0,0,0],[1,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 370
-            [[1,0,0],[1,1,0],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 371
-            [[1,0,0,0],[1,1,0,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 372
-            [[1,0,0,0],[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 373
-            [[1,0,0,0],[1,1,0,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 374
-            [[1,0,0,0,0],[1,1,0,0,1],[0,0,1,1,0]], # One-Sided 6-polyking 375
-            [[1,0,0,0],[1,1,0,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 376
-            [[1,0,0,0,0],[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 377
-            [[1,0,0],[0,1,0],[1,0,1],[1,0,1]], # One-Sided 6-polyking 378
-            [[0,1,0],[1,0,0],[0,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 379
-            [[1,1,0],[0,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 380
-            [[1,0,0],[0,1,0],[1,1,1],[0,1,0]], # One-Sided 6-polyking 381
-            [[1,0,0],[0,1,0],[1,1,1],[0,0,1]], # One-Sided 6-polyking 382
-            [[1,0,0],[0,1,0],[1,0,1],[0,1,1]], # One-Sided 6-polyking 383
-            [[1,0,0],[0,1,0],[1,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 384
-            [[1,0,0],[0,1,0],[1,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 385
-            [[1,0,1],[0,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 386
-            [[1,0,0],[0,1,1],[1,0,1],[0,0,1]], # One-Sided 6-polyking 387
-            [[1,0,0,1],[0,1,1,0],[1,0,1,0]], # One-Sided 6-polyking 388
-            [[1,0,0,0],[0,1,1,1],[1,0,1,0]], # One-Sided 6-polyking 389
-            [[1,0,0],[0,1,0],[1,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 390
-            [[1,0,0,0],[0,1,0,1],[1,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 391
-            [[1,0,0,0],[0,1,0,0],[1,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 392
-            [[1,0,0,0],[0,1,0,0],[1,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 393
-            [[1,0,0,0],[0,1,0,0],[1,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 394
-            [[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 395
-            [[0,1,0],[1,0,0],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 396
-            [[1,1,0],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 397
-            [[1,0,1],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 398
-            [[1,0,0],[0,1,0],[0,0,1],[1,1,1]], # One-Sided 6-polyking 399
-            [[1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,0,1]], # One-Sided 6-polyking 400
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[1,1,0,0]], # One-Sided 6-polyking 401
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[1,1,0,1]], # One-Sided 6-polyking 402
-            [[1,0,0],[0,1,0],[0,0,1],[1,0,1],[0,1,0]], # One-Sided 6-polyking 403
-            [[1,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 404
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 405
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 406
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[1,0,1]], # One-Sided 6-polyking 407
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 408
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 409
-            [[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 410
-            [[0,1,0],[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 411
-            [[0,1,0],[0,1,0],[1,0,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 412
-            [[0,1,0],[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 413
-            [[0,1,0],[1,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 414
-            [[0,1,0],[1,1,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 415
-            [[0,1,0],[1,0,0],[0,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 416
-            [[0,1,0],[1,0,0],[0,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 417
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 418
-            [[0,1,0],[1,0,1],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 419
-            [[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 420
-            [[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 421
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 422
-            [[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 423
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 424
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 425
-            [[0,1,1],[1,0,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 426
-            [[0,1,0],[1,0,0],[0,1,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 427
-            [[0,1,0,0],[1,0,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 428
-            [[0,1,0,0],[1,0,0,0],[0,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 429
-            [[0,1,0,0],[1,0,0,0],[0,1,1,0],[0,0,1,1]], # One-Sided 6-polyking 430
-            [[0,1,0],[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 431
-            [[0,1,0,0],[1,0,0,0],[0,1,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 432
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 433
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 434
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 435
-            [[1,1,0],[0,1,1],[0,1,1]], # One-Sided 6-polyking 436
-            [[1,1,0],[0,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 437
-            [[1,1,0],[0,1,0],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 438
-            [[1,1,0],[0,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 439
-            [[1,1,0],[0,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 440
-            [[1,1,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 441
-            [[1,1,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 442
-            [[1,1,0],[0,1,0],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 443
-            [[0,0,1],[1,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 444
-            [[0,0,1],[1,1,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 445
-            [[1,1,1],[0,1,1],[0,0,1]], # One-Sided 6-polyking 446
-            [[1,1,1],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 447
-            [[1,1,0],[0,1,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 448
-            [[1,1,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 449
-            [[1,1,0,0],[0,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 450
-            [[1,1,0,0],[0,1,1,0],[0,0,1,1]], # One-Sided 6-polyking 451
-            [[1,1,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 452
-            [[1,1,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 453
-            [[1,0,0],[0,1,0],[0,1,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 454
-            [[1,0,1],[0,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 455
-            [[1,0,0],[0,1,0],[0,1,1],[0,1,1]], # One-Sided 6-polyking 456
-            [[1,0,0],[0,1,0],[0,1,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 457
-            [[1,0,0,0],[0,1,0,0],[0,1,1,1],[0,1,0,0]], # One-Sided 6-polyking 458
-            [[1,0,0,0],[0,1,0,0],[0,1,1,0],[0,1,0,1]], # One-Sided 6-polyking 459
-            [[1,0,1],[0,1,1],[0,1,1]], # One-Sided 6-polyking 460
-            [[1,0,0,1],[0,1,1,0],[0,1,1,0]], # One-Sided 6-polyking 461
-            [[1,0,0,0],[0,1,1,1],[0,1,1,0]], # One-Sided 6-polyking 462
-            [[1,0,0,0],[0,1,1,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 463
-            [[1,0,0,0],[0,1,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 464
-            [[1,0,0],[0,1,1],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 465
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,1],[0,1,0]], # One-Sided 6-polyking 466
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,1,1]], # One-Sided 6-polyking 467
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 468
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 469
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 470
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 471
-            [[1,0,1],[0,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 472
-            [[1,0,1],[0,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 473
-            [[1,0,1],[0,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 474
-            [[1,0,0],[0,1,1],[0,0,1],[0,1,1]], # One-Sided 6-polyking 475
-            [[1,0,0],[0,1,1],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 476
-            [[1,0,0,1],[0,1,1,0],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 477
-            [[1,0,0,0],[0,1,1,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 478
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,1],[0,0,1]], # One-Sided 6-polyking 479
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,1,1]], # One-Sided 6-polyking 480
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 481
-            [[1,0,0],[0,1,0],[0,0,1],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 482
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 483
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 484
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,0],[0,0,1,1]], # One-Sided 6-polyking 485
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 486
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,1],[0,1,0,0,0]], # One-Sided 6-polyking 487
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 488
-            [[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 489
-            [[1,0,1],[0,1,0],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 490
-            [[1,0,0],[0,1,1],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 491
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 492
-            [[0,0,1,0],[1,0,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 493
-            [[1,0,1,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 494
-            [[1,0,1,0],[0,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 495
-            [[1,0,1,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 496
-            [[1,0,0,1],[0,1,1,0],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 497
-            [[1,0,0,0],[0,1,1,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 498
-            [[1,0,0,0],[0,1,1,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 499
-            [[1,0,0,0],[0,1,1,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 500
-            [[0,0,0,1],[1,0,0,1],[0,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 501
-            [[1,0,0,1],[0,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 502
-            [[1,0,0,1],[0,1,1,0],[0,0,1,1]], # One-Sided 6-polyking 503
-            [[1,0,0,1],[0,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 504
-            [[0,0,0,0,1],[1,0,0,1,0],[0,1,1,0,0],[0,0,1,0,0]], # One-Sided 6-polyking 505
-            [[1,0,0,1,1],[0,1,1,0,0],[0,0,1,0,0]], # One-Sided 6-polyking 506
-            [[1,0,0,1,0],[0,1,1,0,1],[0,0,1,0,0]], # One-Sided 6-polyking 507
-            [[1,0,0,0],[0,1,1,1],[0,0,1,1]], # One-Sided 6-polyking 508
-            [[1,0,0,0],[0,1,1,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 509
-            [[1,0,0,0,1],[0,1,1,1,0],[0,0,1,0,0]], # One-Sided 6-polyking 510
-            [[1,0,0,0,0],[0,1,1,1,0],[0,0,1,0,1]], # One-Sided 6-polyking 511
-            [[1,0,0],[0,1,0],[0,0,1],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 512
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 513
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 514
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 515
-            [[1,0,0,0],[0,1,0,1],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 516
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,1,1]], # One-Sided 6-polyking 517
-            [[1,0,0,0],[0,1,0,0],[0,0,1,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 518
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 519
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,1,1,1]], # One-Sided 6-polyking 520
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 521
-            [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 522
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 523
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,1,1]], # One-Sided 6-polyking 524
-            [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 525
-            [[1,1,0],[1,0,1],[1,0,1]], # One-Sided 6-polyking 526
-            [[1,1,0,0],[1,0,1,0],[1,0,0,1]], # One-Sided 6-polyking 527
-            [[0,1,0],[1,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 528
-            [[0,1,0,0],[1,1,0,0],[1,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 529
-            [[1,1,0],[1,1,1],[0,0,1]], # One-Sided 6-polyking 530
-            [[1,1,0],[1,0,1],[0,1,1]], # One-Sided 6-polyking 531
-            [[1,1,0],[1,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 532
-            [[0,0,1],[1,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 533
-            [[1,1,1],[1,0,1],[0,0,1]], # One-Sided 6-polyking 534
-            [[0,0,0,1],[1,1,1,0],[1,0,1,0]], # One-Sided 6-polyking 535
-            [[1,1,1,0],[1,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 536
-            [[1,1,0],[1,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 537
-            [[1,1,0,1],[1,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 538
-            [[1,1,0,0],[1,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 539
-            [[1,1,0,0],[1,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 540
-            [[1,1,0,0],[1,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 541
-            [[1,1,0,0],[1,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 542
-            [[1,1,0,0,0],[1,0,1,0,0],[0,0,0,1,1]], # One-Sided 6-polyking 543
-            [[1,1,0],[0,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 544
-            [[0,1,0],[1,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 545
-            [[0,0,1],[1,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 546
-            [[1,1,0],[0,0,1],[1,1,1]], # One-Sided 6-polyking 547
-            [[1,1,0],[0,0,1],[1,1,0],[0,0,1]], # One-Sided 6-polyking 548
-            [[1,1,0,0],[0,0,1,1],[1,1,0,0]], # One-Sided 6-polyking 549
-            [[1,1,0,0],[0,0,1,0],[1,1,0,1]], # One-Sided 6-polyking 550
-            [[1,1,0],[0,0,1],[1,0,1],[0,1,0]], # One-Sided 6-polyking 551
-            [[1,1,0],[0,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 552
-            [[1,1,0],[0,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 553
-            [[1,1,0,0],[0,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 554
-            [[1,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 555
-            [[1,1,0],[0,0,1],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 556
-            [[0,1,0],[1,1,1],[0,1,1]], # One-Sided 6-polyking 557
-            [[0,1,0],[1,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 558
-            [[0,1,0],[1,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 559
-            [[0,1,0],[1,1,0],[0,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 560
-            [[0,1,0,0],[1,1,0,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 561
-            [[0,1,0],[1,1,0],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 562
-            [[0,1,0],[1,1,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 563
-            [[0,1,0,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 564
-            [[0,1,0,0],[1,1,1,1],[0,0,1,0]], # One-Sided 6-polyking 565
-            [[0,1,0,0],[1,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 566
-            [[0,1,0,0],[1,1,0,1],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 567
-            [[0,1,0,0],[1,1,0,0],[0,0,1,1],[0,0,1,0]], # One-Sided 6-polyking 568
-            [[0,1,0,0],[1,1,0,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 569
-            [[0,1,0,0],[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 570
-            [[0,1,0,0,0],[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 571
-            [[0,0,0,1],[1,1,1,0],[0,1,1,0]], # One-Sided 6-polyking 572
-            [[1,1,1,0],[0,1,1,1]], # One-Sided 6-polyking 573
-            [[1,1,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 574
-            [[1,1,0,0,0],[0,1,1,0,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 575
-            [[1,1,1],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 576
-            [[1,1,0],[0,0,1],[0,1,1],[0,1,0]], # One-Sided 6-polyking 577
-            [[1,1,0],[0,0,1],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 578
-            [[1,1,0,0],[0,0,1,1],[0,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 579
-            [[1,1,0,0],[0,0,1,0],[0,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 580
-            [[0,0,1],[1,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 581
-            [[0,0,1],[1,1,0],[0,0,1],[0,1,1]], # One-Sided 6-polyking 582
-            [[0,0,1,0],[1,1,0,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 583
-            [[0,0,1,0],[1,1,0,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 584
-            [[1,1,1],[0,0,1],[0,1,1]], # One-Sided 6-polyking 585
-            [[0,0,0,1],[1,1,1,0],[0,0,1,0],[0,1,0,0]], # One-Sided 6-polyking 586
-            [[1,1,1,0],[0,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 587
-            [[1,1,1,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 588
-            [[1,1,0],[0,0,1],[0,1,1],[0,0,1]], # One-Sided 6-polyking 589
-            [[1,1,0,0],[0,0,1,0],[0,1,1,1]], # One-Sided 6-polyking 590
-            [[1,1,0,0],[0,0,1,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 591
-            [[1,1,0,0],[0,0,1,1],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 592
-            [[1,1,0,0],[0,0,1,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 593
-            [[1,1,0,0],[0,0,1,0],[0,1,0,0],[0,0,1,1]], # One-Sided 6-polyking 594
-            [[1,1,0,0],[0,0,1,1],[0,1,0,1]], # One-Sided 6-polyking 595
-            [[1,1,0,0,0],[0,0,1,1,1],[0,1,0,0,0]], # One-Sided 6-polyking 596
-            [[1,1,0,0,0],[0,0,1,0,0],[0,1,0,1,1]], # One-Sided 6-polyking 597
-            [[1,1,0,0,0],[0,0,1,0,0],[0,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 598
-            [[1,1,0],[0,0,1],[0,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 599
-            [[1,1,1],[0,0,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 600
-            [[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 601
-            [[0,0,1,0],[0,0,0,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 602
-            [[0,0,1,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 603
-            [[0,0,1,0],[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 604
-            [[0,0,1,0,0],[1,1,0,0,0],[0,0,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 605
-            [[0,0,0,1],[1,1,1,0],[0,0,1,0],[0,0,1,0]], # One-Sided 6-polyking 606
-            [[1,1,1,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 607
-            [[1,1,1,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 608
-            [[0,0,0,1],[0,0,0,1],[1,1,1,0],[0,0,1,0]], # One-Sided 6-polyking 609
-            [[0,0,0,1],[1,1,1,0],[0,0,1,1]], # One-Sided 6-polyking 610
-            [[0,0,0,1],[1,1,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 611
-            [[0,0,0,0,1],[0,0,0,1,0],[1,1,1,0,0],[0,0,1,0,0]], # One-Sided 6-polyking 612
-            [[0,0,0,1,1],[1,1,1,0,0],[0,0,1,0,0]], # One-Sided 6-polyking 613
-            [[0,0,0,1,0],[1,1,1,0,1],[0,0,1,0,0]], # One-Sided 6-polyking 614
-            [[1,1,0],[0,0,1],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 615
-            [[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,1,1]], # One-Sided 6-polyking 616
-            [[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 617
-            [[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1],[0,0,1,0]], # One-Sided 6-polyking 618
-            [[1,1,0,1],[0,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 619
-            [[1,1,0,0],[0,0,1,1],[0,0,1,1]], # One-Sided 6-polyking 620
-            [[1,1,0,0],[0,0,1,1],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 621
-            [[1,1,0,0],[0,0,1,0],[0,0,1,1],[0,0,0,1]], # One-Sided 6-polyking 622
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,1,1,1]], # One-Sided 6-polyking 623
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,1,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 624
-            [[1,1,0,0],[0,0,1,0],[0,0,1,0],[0,0,0,1],[0,0,0,1]], # One-Sided 6-polyking 625
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 626
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,1,1]], # One-Sided 6-polyking 627
-            [[0,0,0,1,0],[1,1,0,0,1],[0,0,1,1,0]], # One-Sided 6-polyking 628
-            [[1,1,0,0,0],[0,0,1,1,0],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 629
-            [[1,1,0,0,1],[0,0,1,1,1]], # One-Sided 6-polyking 630
-            [[1,1,0,0,1,1],[0,0,1,1,0,0]], # One-Sided 6-polyking 631
-            [[1,1,0,0,1,0],[0,0,1,1,0,1]], # One-Sided 6-polyking 632
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 633
-            [[1,1,0,0,1],[0,0,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 634
-            [[1,1,0,0,0],[0,0,1,0,1],[0,0,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 635
-            [[1,1,0,0,0,1],[0,0,1,0,1,0],[0,0,0,1,0,0]], # One-Sided 6-polyking 636
-            [[1,1,0,0,0,0],[0,0,1,0,1,1],[0,0,0,1,0,0]], # One-Sided 6-polyking 637
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,1],[0,0,0,0,1]], # One-Sided 6-polyking 638
-            [[1,1,0,0,0,0],[0,0,1,0,0,0],[0,0,0,1,1,1]], # One-Sided 6-polyking 639
-            [[1,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,0,1]], # One-Sided 6-polyking 640
-            [[1,1,0,0,0,0],[0,0,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,1]], # One-Sided 6-polyking 641
-            [[1,1,0,0,0,0],[0,0,1,0,0,0],[0,0,0,1,0,0],[0,0,0,0,1,0],[0,0,0,0,0,1]], # One-Sided 6-polyking 642
-            [[1,0,0],[0,1,1],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 643
-            [[0,1,0],[1,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 644
-            [[0,0,1],[0,1,0],[1,0,1],[1,1,0]], # One-Sided 6-polyking 645
-            [[0,1,0],[1,0,1],[1,1,1]], # One-Sided 6-polyking 646
-            [[0,1,0,0],[1,0,1,1],[1,1,0,0]], # One-Sided 6-polyking 647
-            [[0,1,0,0],[1,0,1,0],[1,1,0,1]], # One-Sided 6-polyking 648
-            [[0,1,0],[1,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 649
-            [[0,1,0,0],[1,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 650
-            [[0,1,0,0],[1,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 651
-            [[0,1,0],[0,1,0],[0,1,0],[1,0,1],[0,0,1]], # One-Sided 6-polyking 652
-            [[0,1,0],[0,1,0],[1,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 653
-            [[0,1,0],[0,1,0],[1,0,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 654
-            [[0,1,0,1],[0,1,1,0],[1,0,1,0]], # One-Sided 6-polyking 655
-            [[0,1,0,0],[0,1,0,0],[1,0,1,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 656
-            [[0,1,1],[1,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 657
-            [[0,1,0],[1,0,1],[0,1,1],[0,1,0]], # One-Sided 6-polyking 658
-            [[0,1,0,0],[1,0,1,1],[0,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 659
-            [[0,1,0,0],[1,0,1,0],[0,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 660
-            [[0,1,0,0],[1,0,1,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 661
-            [[0,1,0,0],[1,0,1,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 662
-            [[0,0,1,0],[0,0,0,1],[0,1,1,0],[1,0,1,0]], # One-Sided 6-polyking 663
-            [[0,0,0,1],[0,1,1,1],[1,0,1,0]], # One-Sided 6-polyking 664
-            [[0,1,0],[1,0,1],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 665
-            [[0,1,0,0,0],[1,0,1,0,0],[0,0,1,0,1],[0,0,0,1,0]], # One-Sided 6-polyking 666
-            [[1,1,1],[0,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 667
-            [[0,1,0],[0,0,1],[1,1,0],[1,0,0],[1,0,0]], # One-Sided 6-polyking 668
-            [[0,1,0],[0,1,0],[0,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 669
-            [[0,1,0],[0,0,1],[1,1,0],[1,1,0]], # One-Sided 6-polyking 670
-            [[0,1,0],[0,0,1],[1,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 671
-            [[0,0,1],[0,1,0],[0,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 672
-            [[0,1,0],[0,0,1],[1,1,1],[1,0,0]], # One-Sided 6-polyking 673
-            [[0,1,0,0],[0,0,1,1],[1,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 674
-            [[0,1,0,0],[0,0,1,0],[1,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 675
-            [[0,1,0],[0,1,0],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 676
-            [[0,1,0],[0,0,1],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 677
-            [[0,0,1],[0,1,0],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 678
-            [[0,1,1],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 679
-            [[0,1,0],[0,1,0],[0,0,1],[1,1,1]], # One-Sided 6-polyking 680
-            [[0,1,0],[0,1,0],[0,0,1],[1,1,0],[0,0,1]], # One-Sided 6-polyking 681
-            [[0,1,0,0],[0,1,0,0],[0,0,1,1],[1,1,0,0]], # One-Sided 6-polyking 682
-            [[0,1,0,0],[0,1,0,0],[0,0,1,0],[1,1,0,1]], # One-Sided 6-polyking 683
-            [[0,0,1],[0,1,0],[0,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 684
-            [[0,1,0,0],[0,0,1,0],[1,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 685
-            [[0,0,1],[0,0,1],[0,1,0],[0,0,1],[1,1,0]], # One-Sided 6-polyking 686
-            [[0,0,1],[0,1,0],[0,0,1],[1,1,1]], # One-Sided 6-polyking 687
-            [[0,0,1],[0,1,0],[0,0,1],[1,1,0],[0,0,1]], # One-Sided 6-polyking 688
-            [[0,0,0,1],[0,0,1,0],[0,1,0,0],[0,0,1,0],[1,1,0,0]], # One-Sided 6-polyking 689
-            [[0,0,1,1],[0,1,0,0],[0,0,1,0],[1,1,0,0]], # One-Sided 6-polyking 690
-            [[0,0,1,0],[0,1,0,0],[0,0,1,1],[1,1,0,0]], # One-Sided 6-polyking 691
-            [[0,0,1,0],[0,1,0,0],[0,0,1,0],[1,1,0,1]], # One-Sided 6-polyking 692
-            [[0,1,0],[0,0,1],[1,1,1],[0,0,1]], # One-Sided 6-polyking 693
-            [[0,1,0,0],[0,0,1,0],[1,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 694
-            [[0,1,0,0],[0,0,1,1],[1,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 695
-            [[0,1,0,0],[0,0,1,0],[1,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 696
-            [[0,1,0,0],[0,0,1,1],[1,1,0,1]], # One-Sided 6-polyking 697
-            [[0,1,0,0,0],[0,0,1,1,0],[1,1,0,0,1]], # One-Sided 6-polyking 698
-            [[0,1,0,0,0],[0,0,1,0,0],[1,1,0,1,1]], # One-Sided 6-polyking 699
-            [[0,1,0,0,0],[0,0,1,0,0],[1,1,0,1,0],[0,0,0,0,1]], # One-Sided 6-polyking 700
-            [[0,1,1],[1,0,1],[0,0,1],[0,0,1]], # One-Sided 6-polyking 701
-            [[0,1,0],[0,0,1],[0,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 702
-            [[0,1,0,0],[0,0,1,1],[0,1,0,0],[1,0,0,0],[1,0,0,0]], # One-Sided 6-polyking 703
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0],[1,0,0,0]], # One-Sided 6-polyking 704
-            [[0,1,0],[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 705
-            [[0,1,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 706
-            [[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,1,0]], # One-Sided 6-polyking 707
-            [[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 708
-            [[0,0,1],[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 709
-            [[0,1,0],[0,1,0],[0,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 710
-            [[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,1]], # One-Sided 6-polyking 711
-            [[0,1,0,0],[0,1,0,0],[0,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 712
-            [[0,1,0,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 713
-            [[0,1,0,0],[0,1,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 714
-            [[0,1,1],[0,0,1],[0,1,0],[1,1,0]], # One-Sided 6-polyking 715
-            [[0,1,0,0],[0,0,1,1],[0,1,0,0],[1,1,0,0]], # One-Sided 6-polyking 716
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,1,0,0]], # One-Sided 6-polyking 717
-            [[0,1,1],[0,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 718
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0],[0,1,0,0]], # One-Sided 6-polyking 719
-            [[0,0,1],[0,1,0],[0,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 720
-            [[0,0,0,1],[0,0,1,0],[0,1,0,0],[0,0,1,0],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 721
-            [[0,0,1,0],[0,1,0,0],[0,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 722
-            [[0,0,1,0],[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 723
-            [[0,1,1,0],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 724
-            [[0,1,0,1],[0,0,1,0],[0,1,1,0],[1,0,0,0]], # One-Sided 6-polyking 725
-            [[0,1,0,0],[0,0,1,0],[0,1,1,1],[1,0,0,0]], # One-Sided 6-polyking 726
-            [[0,1,0,0],[0,0,1,0],[0,1,1,0],[1,0,0,1]], # One-Sided 6-polyking 727
-            [[0,1,0,1],[0,0,1,0],[0,1,0,0],[1,0,1,0]], # One-Sided 6-polyking 728
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[1,0,1,0]], # One-Sided 6-polyking 729
-            [[0,1,0,1],[0,0,1,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 730
-            [[0,1,0,1],[0,0,1,0],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 731
-            [[0,1,0,0],[0,0,1,1],[0,1,0,1],[1,0,0,0]], # One-Sided 6-polyking 732
-            [[0,1,0,0,0],[0,0,1,1,1],[0,1,0,0,0],[1,0,0,0,0]], # One-Sided 6-polyking 733
-            [[0,1,0,0,0],[0,0,1,1,0],[0,1,0,0,1],[1,0,0,0,0]], # One-Sided 6-polyking 734
-            [[0,1,0,0,0],[0,0,1,0,1],[0,1,0,1,0],[1,0,0,0,0]], # One-Sided 6-polyking 735
-            [[0,1,0,0,0],[0,0,1,0,0],[0,1,0,1,1],[1,0,0,0,0]], # One-Sided 6-polyking 736
-            [[0,1,0,0,0],[0,0,1,0,0],[0,1,0,1,0],[1,0,0,0,1]], # One-Sided 6-polyking 737
-            [[0,0,1],[0,0,1],[1,0,1],[0,1,1]], # One-Sided 6-polyking 738
-            [[0,1,1],[0,0,1],[0,1,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 739
-            [[0,1,0],[0,0,1],[0,1,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 740
-            [[0,1,0,0],[0,0,1,0],[0,1,0,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 741
-            [[0,0,1],[0,0,1],[0,0,1],[1,0,1],[0,1,0]], # One-Sided 6-polyking 742
-            [[0,0,1],[0,0,1],[0,0,1],[0,1,1],[1,0,0]], # One-Sided 6-polyking 743
-            [[0,0,1],[0,0,1],[0,0,1],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 744
-            [[1,0],[1,0],[1,0],[1,0],[0,1],[0,1]], # One-Sided 6-polyking 745
-            [[1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 746
-            [[1,0],[1,0],[1,0],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 747
-            [[1,0],[1,1],[1,0],[0,1],[1,0]], # One-Sided 6-polyking 748
-            [[1,0],[1,0],[1,1],[0,1],[1,0]], # One-Sided 6-polyking 749
-            [[1,0],[1,0],[1,0],[0,1],[1,1]], # One-Sided 6-polyking 750
-            [[1,0],[1,0],[1,0],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 751
-            [[1,0,0],[1,0,0],[1,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 752
-            [[1,0,0],[1,0,0],[1,0,0],[0,1,1],[1,0,0]], # One-Sided 6-polyking 753
-            [[1,0,0],[1,0,0],[1,0,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 754
-            [[1,0],[1,0],[1,0],[0,1],[0,1],[1,0]], # One-Sided 6-polyking 755
-            [[0,1],[1,0],[1,0],[1,0],[0,1],[0,1]], # One-Sided 6-polyking 756
-            [[1,1],[1,0],[1,0],[0,1],[0,1]], # One-Sided 6-polyking 757
-            [[1,0],[1,0],[1,1],[0,1],[0,1]], # One-Sided 6-polyking 758
-            [[1,0,0],[1,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 759
-            [[1,0],[1,0],[1,0],[0,1],[0,1],[0,1]], # One-Sided 6-polyking 760
-            [[1,0,0],[1,0,0],[1,0,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 761
-            [[1,0,0],[1,0,0],[1,0,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 762
-            [[1,0,0],[1,0,0],[1,0,0],[0,1,0],[0,1,1]], # One-Sided 6-polyking 763
-            [[1,0,0],[1,0,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 764
-            [[1,1],[0,1],[1,0],[0,1],[1,0]], # One-Sided 6-polyking 765
-            [[1,0],[0,1],[1,0],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 766
-            [[1,1,0],[0,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 767
-            [[1,1],[1,1],[1,1]], # One-Sided 6-polyking 768
-            [[1,0,1],[1,1,0],[1,1,0]], # One-Sided 6-polyking 769
-            [[1,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 770
-            [[0,1],[1,0],[1,0],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 771
-            [[1,0],[1,1],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 772
-            [[1,0],[1,0],[0,1],[1,1],[1,0]], # One-Sided 6-polyking 773
-            [[1,0],[1,0],[0,1],[1,0],[1,1]], # One-Sided 6-polyking 774
-            [[1,0],[1,0],[0,1],[1,0],[1,0],[0,1]], # One-Sided 6-polyking 775
-            [[1,0,0],[1,0,0],[0,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 776
-            [[1,0,0],[1,0,0],[0,1,0],[1,0,1],[1,0,0]], # One-Sided 6-polyking 777
-            [[1,0],[1,0],[0,1],[1,0],[0,1],[1,0]], # One-Sided 6-polyking 778
-            [[0,1],[1,0],[1,1],[0,1],[1,0]], # One-Sided 6-polyking 779
-            [[0,1],[1,0],[1,0],[0,1],[1,1]], # One-Sided 6-polyking 780
-            [[0,1],[1,0],[1,0],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 781
-            [[0,0,1],[0,1,0],[1,0,0],[1,0,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 782
-            [[0,1,0],[1,0,0],[1,0,0],[0,1,1],[1,0,0]], # One-Sided 6-polyking 783
-            [[1,1],[1,0],[0,1],[1,1]], # One-Sided 6-polyking 784
-            [[1,1],[1,0],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 785
-            [[1,0],[1,1],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 786
-            [[1,0,1],[1,1,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 787
-            [[1,0],[1,0],[0,1],[1,1],[0,1]], # One-Sided 6-polyking 788
-            [[1,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1]], # One-Sided 6-polyking 789
-            [[1,0],[1,0],[0,1],[1,0],[0,1],[0,1]], # One-Sided 6-polyking 790
-            [[1,0,0],[1,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 791
-            [[1,0,0],[1,0,0],[0,1,1],[1,0,0],[0,1,0]], # One-Sided 6-polyking 792
-            [[1,0,0],[1,0,0],[0,1,0],[1,0,1],[0,1,0]], # One-Sided 6-polyking 793
-            [[1,0,0],[1,0,0],[0,1,0],[1,0,0],[0,1,1]], # One-Sided 6-polyking 794
-            [[1,0,0],[1,0,0],[0,1,1],[1,0,1]], # One-Sided 6-polyking 795
-            [[0,1],[1,0],[1,0],[0,1],[0,1],[1,0]], # One-Sided 6-polyking 796
-            [[1,0,0],[1,0,0],[0,1,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 797
-            [[0,1,0],[1,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 798
-            [[0,0,1],[0,1,0],[1,0,0],[1,0,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 799
-            [[0,1,0],[1,0,1],[1,0,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 800
-            [[0,1,0],[1,0,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 801
-            [[1,1,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 802
-            [[1,1,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 803
-            [[1,0,1],[1,1,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 804
-            [[1,0,0],[1,1,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 805
-            [[0,0,1],[1,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 806
-            [[1,0,1],[1,1,1],[0,1,0]], # One-Sided 6-polyking 807
-            [[1,0,1],[1,1,0],[0,1,1]], # One-Sided 6-polyking 808
-            [[1,0,1],[1,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 809
-            [[0,0,0,1],[1,0,1,0],[1,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 810
-            [[1,0,1,1],[1,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 811
-            [[1,0,1,0],[1,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 812
-            [[1,0,0],[1,0,0],[0,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyking 813
-            [[1,0,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 814
-            [[1,0,0],[1,0,1],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 815
-            [[1,0,0],[1,0,0],[0,1,1],[0,1,0],[0,0,1]], # One-Sided 6-polyking 816
-            [[1,0,0],[1,0,0],[0,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 817
-            [[1,0,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,0,1]], # One-Sided 6-polyking 818
-            [[1,0,0,0],[1,0,0,0],[0,1,0,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 819
-            [[1,1],[1,1],[1,0],[1,0]], # One-Sided 6-polyking 820
-            [[1,0,0],[1,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 821
-            [[1,0,0],[1,1,0],[1,0,1],[1,0,0]], # One-Sided 6-polyking 822
-            [[0,1],[1,0],[1,1],[1,1]], # One-Sided 6-polyking 823
-            [[1,0],[1,1],[1,1],[0,1]], # One-Sided 6-polyking 824
-            [[1,0,1],[1,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 825
-            [[1,0,0],[1,1,0],[1,0,1],[0,1,0]], # One-Sided 6-polyking 826
-            [[1,0],[1,1],[0,1],[0,1],[0,1]], # One-Sided 6-polyking 827
-            [[1,0],[0,1],[1,0],[1,0],[0,1],[1,0]], # One-Sided 6-polyking 828
-            [[0,1],[0,1],[1,0],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 829
-            [[0,1],[1,1],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 830
-            [[0,1],[1,0],[0,1],[1,1],[1,0]], # One-Sided 6-polyking 831
-            [[0,1],[1,0],[0,1],[1,0],[1,0],[0,1]], # One-Sided 6-polyking 832
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0],[1,0,0]], # One-Sided 6-polyking 833
-            [[0,1,0],[1,0,1],[0,1,0],[1,0,0],[1,0,0]], # One-Sided 6-polyking 834
-            [[0,1,0],[1,0,0],[0,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 835
-            [[0,1,0],[1,0,0],[0,1,0],[1,0,1],[1,0,0]], # One-Sided 6-polyking 836
-            [[1,1],[0,1],[1,1],[1,0]], # One-Sided 6-polyking 837
-            [[1,1],[0,1],[1,0],[1,1]], # One-Sided 6-polyking 838
-            [[1,1],[0,1],[1,0],[1,0],[0,1]], # One-Sided 6-polyking 839
-            [[0,0,1],[1,1,0],[0,1,0],[1,0,0],[1,0,0]], # One-Sided 6-polyking 840
-            [[1,1,1],[0,1,0],[1,0,0],[1,0,0]], # One-Sided 6-polyking 841
-            [[1,1,0],[0,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 842
-            [[1,1,0],[0,1,0],[1,0,1],[1,0,0]], # One-Sided 6-polyking 843
-            [[1,0],[0,1],[1,1],[1,0],[0,1]], # One-Sided 6-polyking 844
-            [[1,0,1],[0,1,0],[1,1,0],[1,0,0]], # One-Sided 6-polyking 845
-            [[1,0,0],[0,1,0],[1,1,1],[1,0,0]], # One-Sided 6-polyking 846
-            [[1,0,0],[0,1,0],[1,1,0],[1,0,1]], # One-Sided 6-polyking 847
-            [[1,0,1],[0,1,0],[1,0,0],[1,1,0]], # One-Sided 6-polyking 848
-            [[1,0,0],[0,1,0],[1,0,1],[1,1,0]], # One-Sided 6-polyking 849
-            [[1,0,0],[0,1,0],[1,0,0],[1,1,1]], # One-Sided 6-polyking 850
-            [[1,0],[0,1],[1,0],[1,0],[0,1],[0,1]], # One-Sided 6-polyking 851
-            [[1,0,1],[0,1,0],[1,0,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 852
-            [[1,0,0],[0,1,0],[1,0,1],[1,0,0],[0,1,0]], # One-Sided 6-polyking 853
-            [[1,0,0],[0,1,0],[1,0,0],[1,0,1],[0,1,0]], # One-Sided 6-polyking 854
-            [[1,0,0],[0,1,0],[1,0,0],[1,0,0],[0,1,1]], # One-Sided 6-polyking 855
-            [[1,0,0],[0,1,0],[1,0,0],[1,0,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 856
-            [[1,0,1],[0,1,1],[1,0,0],[1,0,0]], # One-Sided 6-polyking 857
-            [[1,0,1],[0,1,0],[1,0,1],[1,0,0]], # One-Sided 6-polyking 858
-            [[1,0,0],[0,1,1],[1,0,1],[1,0,0]], # One-Sided 6-polyking 859
-            [[1,0,0,0],[0,1,1,1],[1,0,0,0],[1,0,0,0]], # One-Sided 6-polyking 860
-            [[1,0,0,0],[0,1,1,0],[1,0,0,1],[1,0,0,0]], # One-Sided 6-polyking 861
-            [[1,0,0,0],[0,1,0,1],[1,0,1,0],[1,0,0,0]], # One-Sided 6-polyking 862
-            [[1,0,0,0],[0,1,0,0],[1,0,1,1],[1,0,0,0]], # One-Sided 6-polyking 863
-            [[1,0,0,0],[0,1,0,0],[1,0,1,0],[1,0,0,1]], # One-Sided 6-polyking 864
-            [[0,1],[1,0],[0,1],[1,0],[0,1],[1,0]], # One-Sided 6-polyking 865
-            [[1,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 866
-            [[1,0,0],[0,1,0],[1,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 867
-            [[1,0,0],[0,1,0],[1,0,0],[0,1,1],[1,0,0]], # One-Sided 6-polyking 868
-            [[0,1],[0,1],[1,0],[0,1],[1,1]], # One-Sided 6-polyking 869
-            [[0,1],[0,1],[1,0],[0,1],[1,0],[0,1]], # One-Sided 6-polyking 870
-            [[0,1,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 871
-            [[0,1,0],[0,1,0],[1,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 872
-            [[0,1,0],[0,1,0],[1,0,0],[0,1,1],[1,0,0]], # One-Sided 6-polyking 873
-            [[0,1,0],[0,1,0],[1,0,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 874
-            [[0,1,0],[0,0,1],[1,1,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 875
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,1,0]], # One-Sided 6-polyking 876
-            [[0,1,0],[1,0,1],[0,1,0],[1,1,0]], # One-Sided 6-polyking 877
-            [[0,1,0],[1,0,0],[0,1,0],[1,1,1]], # One-Sided 6-polyking 878
-            [[0,1,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1]], # One-Sided 6-polyking 879
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 880
-            [[0,1,0],[1,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 881
-            [[0,1,0],[1,0,0],[0,1,1],[1,0,0],[0,1,0]], # One-Sided 6-polyking 882
-            [[0,1,0],[1,0,0],[0,1,0],[1,0,0],[0,1,1]], # One-Sided 6-polyking 883
-            [[0,0,1],[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 884
-            [[0,0,1],[0,1,0],[1,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 885
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,1],[1,0,0]], # One-Sided 6-polyking 886
-            [[0,0,1],[0,1,0],[1,0,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 887
-            [[0,0,1,0],[0,1,0,1],[1,0,0,0],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 888
-            [[1,1,0],[0,1,0],[1,1,1]], # One-Sided 6-polyking 889
-            [[1,1,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 890
-            [[1,1,0],[0,1,0],[1,0,1],[0,1,0]], # One-Sided 6-polyking 891
-            [[1,1,0],[0,1,0],[1,0,0],[0,1,1]], # One-Sided 6-polyking 892
-            [[0,0,1],[1,1,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 893
-            [[0,0,1],[1,1,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 894
-            [[0,0,0,1],[0,0,1,0],[1,1,0,0],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 895
-            [[0,0,1,0],[1,1,0,1],[0,1,0,0],[1,0,0,0]], # One-Sided 6-polyking 896
-            [[1,0,0],[0,1,0],[1,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 897
-            [[1,0,1],[0,1,0],[1,1,1]], # One-Sided 6-polyking 898
-            [[1,0,0,0],[0,1,0,0],[1,1,1,1]], # One-Sided 6-polyking 899
-            [[0,0,1],[1,0,1],[0,1,0],[1,0,0],[0,1,0]], # One-Sided 6-polyking 900
-            [[1,0,1],[0,1,1],[1,0,0],[0,1,0]], # One-Sided 6-polyking 901
-            [[1,0,1],[0,1,0],[1,0,1],[0,1,0]], # One-Sided 6-polyking 902
-            [[1,0,1],[0,1,0],[1,0,0],[0,1,1]], # One-Sided 6-polyking 903
-            [[1,0,1,0],[0,1,0,1],[1,0,0,0],[0,1,0,0]], # One-Sided 6-polyking 904
-            [[1,0,0],[0,1,1],[1,0,1],[0,1,0]], # One-Sided 6-polyking 905
-            [[1,0,0,0],[0,1,1,1],[1,0,0,0],[0,1,0,0]], # One-Sided 6-polyking 906
-            [[1,0,0,0],[0,1,1,0],[1,0,0,1],[0,1,0,0]], # One-Sided 6-polyking 907
-            [[1,0,0,0],[0,1,0,0],[1,0,1,1],[0,1,0,0]], # One-Sided 6-polyking 908
-            [[1,0,0,0],[0,1,0,0],[1,0,1,0],[0,1,0,1]], # One-Sided 6-polyking 909
-            [[1,0,0,0],[0,1,0,0],[1,0,0,1],[0,1,1,0]], # One-Sided 6-polyking 910
-            [[1,0,0,0],[0,1,0,0],[1,0,0,0],[0,1,1,1]], # One-Sided 6-polyking 911
-            [[1,0,0,0],[0,1,0,0],[1,0,0,0],[0,1,1,0],[0,0,0,1]], # One-Sided 6-polyking 912
-            [[1,0,1],[0,1,0],[0,1,0],[1,0,1]], # One-Sided 6-polyking 913
-            [[1,0,0,0],[0,1,0,0],[0,1,0,1],[1,0,1,0]], # One-Sided 6-polyking 914
-            [[1,0],[0,1],[0,1],[0,1],[0,1],[1,0]], # One-Sided 6-polyking 915
-            [[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 916
-            [[0,1,0],[0,1,0],[0,0,1],[1,1,0],[0,1,0]], # One-Sided 6-polyking 917
-            [[0,1,0],[0,0,1],[1,1,1],[0,1,0]], # One-Sided 6-polyking 918
-            [[0,1,0],[0,0,1],[1,1,0],[0,1,1]], # One-Sided 6-polyking 919
-            [[0,1,0],[0,0,1],[1,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 920
-            [[0,1],[1,0],[0,1],[0,1],[0,1],[0,1]], # One-Sided 6-polyking 921
-            [[0,1,0],[1,0,0],[0,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 922
-            [[0,1,0],[1,0,1],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 923
-            [[0,1,0,0],[1,0,0,0],[0,1,0,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 924
-            [[0,0,1],[1,1,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 925
-            [[0,0,1],[1,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyking 926
-            [[0,0,0,1],[0,0,1,0],[1,1,0,0],[0,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 927
-            [[0,0,1,0],[1,1,0,1],[0,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 928
-            [[1,1,0,0],[0,1,0,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 929
-            [[0,0,1],[1,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 930
-            [[0,0,1],[0,0,1],[1,1,1],[0,1,0]], # One-Sided 6-polyking 931
-            [[0,0,1],[0,0,1],[1,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 932
-            [[0,0,1,1],[0,0,1,0],[1,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 933
-            [[0,0,1,0],[0,0,1,0],[1,1,0,1],[0,1,0,0]], # One-Sided 6-polyking 934
-            [[0,0,1],[1,1,1],[0,1,1]], # One-Sided 6-polyking 935
-            [[0,0,0,1],[0,0,1,0],[1,1,1,0],[0,1,0,0]], # One-Sided 6-polyking 936
-            [[0,0,1,0],[1,1,1,0],[0,1,0,1]], # One-Sided 6-polyking 937
-            [[0,0,0,1],[0,0,1,0],[1,1,0,0],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 938
-            [[0,0,1,0],[1,1,0,1],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 939
-            [[0,0,1,0],[1,1,0,0],[0,1,0,0],[0,0,1,1]], # One-Sided 6-polyking 940
-            [[0,0,1,0],[1,1,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]], # One-Sided 6-polyking 941
-            [[0,0,0,1],[0,0,0,1],[0,0,1,0],[1,1,0,0],[0,1,0,0]], # One-Sided 6-polyking 942
-            [[0,0,1,0,0],[1,1,0,1,1],[0,1,0,0,0]], # One-Sided 6-polyking 943
-            [[0,0,1,0,0],[1,1,0,1,0],[0,1,0,0,1]], # One-Sided 6-polyking 944
-            [[1,0],[0,1],[0,1],[0,1],[0,1],[0,1]], # One-Sided 6-polyking 945
-            [[1,0,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 946
-            [[1,0,0],[0,1,0],[0,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 947
-            [[1,0,0],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 948
-            [[1,0,1],[0,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyking 949
-            [[1,0,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 950
-            [[1,0,1],[0,1,0],[0,1,0],[0,0,1],[0,1,0]], # One-Sided 6-polyking 951
-            [[1,0,0],[0,1,0],[0,1,1],[0,0,1],[0,1,0]], # One-Sided 6-polyking 952
-            [[0,0,1],[1,0,1],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 953
-            [[1,0,1],[0,1,0],[0,1,1],[0,0,1]], # One-Sided 6-polyking 954
-            [[0,0,0,1],[1,0,1,0],[0,1,0,0],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 955
-            [[1,0,1,0],[0,1,0,1],[0,1,0,0],[0,0,1,0]], # One-Sided 6-polyking 956
-            [[1,0,1,0],[0,1,0,0],[0,1,0,1],[0,0,1,0]], # One-Sided 6-polyking 957
-            [[1,0,0],[0,1,1],[0,1,1],[0,0,1]], # One-Sided 6-polyking 958
-            [[1,1],[0,1],[1,1],[0,1]], # One-Sided 6-polyking 959
-            [[1,1],[0,1],[0,1],[1,1]], # One-Sided 6-polyking 960
-            [[1,1],[0,1],[0,1],[0,1],[1,0]], # One-Sided 6-polyking 961
-            [[1,1],[0,1],[0,1],[0,1],[0,1]], # One-Sided 6-polyking 962
-            [[0,0,1],[1,1,0],[0,1,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 963
-            [[1,1,1],[0,1,0],[0,1,0],[0,1,0]], # One-Sided 6-polyking 964
-            [[1,1,0],[0,1,1],[0,1,0],[0,1,0]], # One-Sided 6-polyking 965
-            [[1,1,0],[0,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 966
-            [[1,1,0],[0,1,0],[0,1,0],[0,1,1]], # One-Sided 6-polyking 967
-            [[1,1,0],[0,1,0],[0,1,0],[0,1,0],[0,0,1]], # One-Sided 6-polyking 968
-            [[0,1,0],[1,1,0],[0,1,1],[0,1,0]], # One-Sided 6-polyking 969
-            [[0,1],[0,1],[1,1],[0,1],[1,0]], # One-Sided 6-polyking 970
-            [[0,1,0],[0,1,0],[1,1,1],[0,1,0]], # One-Sided 6-polyking 971
-            [[0,1],[0,1],[0,1],[1,1],[1,0]], # One-Sided 6-polyking 972
-            [[0,0,1],[0,1,0],[0,1,0],[0,1,0],[1,1,0]], # One-Sided 6-polyking 973
-            [[0,1,1],[0,1,0],[0,1,0],[1,1,0]], # One-Sided 6-polyking 974
-            [[0,1,0],[0,1,0],[0,1,1],[1,1,0]], # One-Sided 6-polyking 975
-            [[0,1],[0,1],[0,1],[0,1],[1,0],[1,0]], # One-Sided 6-polyking 976
-            [[0,1],[0,1],[0,1],[0,1],[1,1]], # One-Sided 6-polyking 977
-            [[0,0,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[1,0,0]], # One-Sided 6-polyking 978
-            [[0,1,0],[0,1,0],[0,1,1],[0,1,0],[1,0,0]], # One-Sided 6-polyking 979
-            [[1],[1],[1],[1],[1],[1]], # One-Sided 6-polyking 980
-            [[1,0],[1,0],[1,0],[1,1],[1,0]], # One-Sided 6-polyking 981
-            [[0,1],[1,0],[1,0],[1,0],[1,0],[1,0]], # One-Sided 6-polyking 982
-            [[1,0],[1,0],[1,1],[1,0],[1,0]], # One-Sided 6-polyking 983
-            [[0,1],[1,0],[1,0],[1,1],[1,0]], # One-Sided 6-polyking 984
-            [[1,1],[1,0],[1,1],[1,0]], # One-Sided 6-polyking 985
-            [[1,0],[1,1],[1,1],[1,0]], # One-Sided 6-polyking 986
-            [[1,0],[1,0],[1,1],[1,1]], # One-Sided 6-polyking 987
-            [[1,0],[1,0],[1,1],[1,0],[0,1]], # One-Sided 6-polyking 988
-            [[1,0,0],[1,0,1],[1,1,0],[1,0,0]], # One-Sided 6-polyking 989
-            [[1,0,0],[1,0,0],[1,1,1],[1,0,0]], # One-Sided 6-polyking 990
-            [[1,0,0],[1,0,0],[1,1,0],[1,0,1]], # One-Sided 6-polyking 991
-        ]
-    
-    
-
-add_text = "with extended polyominos" if args.e else "" + add_text
-    
-e = 5 if args.e else 0
-# Board dimensions
-COLS = (3 * args.n) + e
-ROWS = (5 * args.n) + e
-
-# Characters for drawing
-BLOCK_CHAR = "█"
-BORDER_CHAR = "│"
-TOP_BOTTOM_BORDER_CHAR = "─"
-CORNER_CHAR = "┌┐└┘"
+initialize_shapes_and_dimensions()
 
 def rotate_piece(piece):
-    return [list(row) for row in zip(*piece[::-1])] # Rotates a piece clockwise by transposing and reversing rows... matrices proved to be useful lol
+    return [list(row) for row in zip(*piece[::-1])] # rotates a piece clockwise by transposing and reversing rows... matrices proved to be useful lol
 
 def check_collision(board, piece, offset):
     """
@@ -1469,23 +146,29 @@ def check_collision(board, piece, offset):
                 board_x = x + off_x
                 board_y = y + off_y
                 if not (0 <= board_x < COLS and board_y < ROWS):
-                    return True  # Out of bounds
+                    return True  # out of bounds
                 if board_y >= 0 and board[board_y][board_x]:
-                    return True  # Collision with another piece
+                    return True  # collision with another piece
     return False
 
 def create_board():
-    return [[0 for _ in range(COLS)] for _ in range(ROWS)] # Creates an empty game board
-
+    return [[0 for _ in range(COLS)] for _ in range(ROWS)] # creates an empty game board
 
 def new_piece():
     """Returns a new random piece dictionary."""
     global next_shape
     shape = next_shape
     next_shape = random.choice(SHAPES)
+    for _ in range(random.randint(0, 3)):
+        next_shape = rotate_piece(next_shape)
+    
+    offset = 0
+    if args.n < 4:
+        offset = random.randint(-1, 1)
+    
     return {
         "shape": shape,
-        "x": COLS // 2 - len(shape[0]) // 2,
+        "x": COLS // 2 - len(shape[0]) // 2 + offset,
         "y": 0,
     }
 
@@ -1504,37 +187,164 @@ def clear_lines(board):
     """Clears completed lines and returns the number of lines cleared."""
     new_board = [row for row in board if not all(row)]
     lines_cleared = ROWS - len(new_board)
-    # Add new empty lines at the top for each cleared line
+    # add new empty lines at the top for each cleared line
     for _ in range(lines_cleared):
         new_board.insert(0, [0 for _ in range(COLS)])
     return new_board, lines_cleared
 
-def draw_game(stdscr, board, piece, score):
-    """Draws the entire game state to the screen."""
-    stdscr.clear()
-    global total_lines
-    global color, bcgd
+def try_wall_kick(board, piece, rotated_shape):
+    """Try wall kick positions for rotation."""
+    # wall kick offsets to try
+    kick_offsets = [
+        (0, 0),   # no kick (original position)
+        (-1, 0),  # left kick
+        (1, 0),   # right kick
+        (-2, 0),  # left kick 2
+        (2, 0),   # right kick 2
+        (0, -1),  # up kick
+        (-1, -1), # left-up kick
+        (1, -1),  # right-up kick
+        (-2, -1), # left-up kick 2
+        (2, -1),  # right-up kick 2
+        (0, 1),   # down kick
+        (-1, 1),  # left-down kick
+        (1, 1),   # right-down kick
+    ]
     
-    # Draw score
+    for dx, dy in kick_offsets:
+        new_x = piece["x"] + dx
+        new_y = piece["y"] + dy
+        
+        # check if the new position is valid
+        if not check_collision(board, rotated_shape, (new_x, new_y)):
+            return new_x, new_y, rotated_shape
+    
+    # if no wall kick works, return None
+    return None
+
+def calculate_score(lines_cleared, level, combo_count):
+    """Calculate score based on Tetris scoring system with level and combo bonuses."""
+    if lines_cleared == 0:
+        return 0
+    
+    # base scores for different line clears
+    base_scores = {
+        1: 60,    # single
+        2: 120,   # double  
+        3: 360,   # triple
+        4: 1200,  # tetris (4 lines)
+        5: 4096,  # pentis (5 lines)
+        6: 16384, # hexis (6 lines)
+    }
+    
+    # get base score
+    base_score = base_scores.get(lines_cleared)
+    
+    # level multiplier (level + 1 to avoid 0 multiplication)
+    level_multiplier = level + 1
+    
+    # combo bonus
+    combo_bonus = combo_count * 50 * level_multiplier * (1+max(0, 4*(args.n - 4))) if combo_count > 0 else 0
+    
+    # calculate total score
+    total_score = (base_score * level_multiplier) + combo_bonus
+    
+    return total_score
+
+def get_ghost_piece_position(board, piece):
+    """Calculate where the piece would land if hard dropped."""
+    ghost_y = piece["y"]
+    
+    # keep moving down until collision
+    while not check_collision(board, piece["shape"], (piece["x"], ghost_y + 1)):
+        ghost_y += 1
+    
+    return ghost_y
+
+def draw_progress_bar(stdscr, y, x, width, current, target, label=""):
+    """Draw a progress bar showing current/target with visual indicator."""
+    if target == 0:
+        percentage = 0
+    else:
+        percentage = min(current / target, 1.0)
+    
+    filled_width = int(width * percentage)
+    
+    # draw the bar
+    bar = "█" * filled_width + "░" * (width - filled_width)
+    stdscr.addstr(y, x, f"{label}[{bar}] {current}/{target}")
+
+def draw_hold_piece(stdscr, start_y, start_x):
+    """Draw the held piece in a designated area."""
+    global held_shape
+    
+    stdscr.addstr(start_y, start_x, "HOLD:")
+    if held_shape:
+        for y, row in enumerate(held_shape):
+            for x, cell in enumerate(row):
+                if cell:
+                    stdscr.addstr(start_y + 1 + y, start_x + x * 2, BLOCK_CHAR * 2)
+
+def draw_game_info(stdscr, score):
+    """Draw game information on the right side."""
+    global total_lines, combo_count, color, bcgd
+    
     stdscr.addstr(0, 0, f"Score: {score}, You are playing {name_of_game}is {add_text}")
     stdscr.addstr(args.n + 2, 3+COLS*2, f"Current level: {level}")
-    stdscr.addstr(args.n + 3, 3+COLS*2, f"Lines cleared: {total_lines}")
-    stdscr.addstr(args.n + 4, 3+COLS*2, f"Current colors are {color} and {bcgd}")
+    
+    draw_progress_bar(stdscr, args.n + 3, 3+COLS*2, 15, total_lines, 5+level, "Progress: ")
+    
+    stdscr.addstr(args.n + 4, 3+COLS*2, f"Lines cleared: {total_lines}")
+    
+    # show combo count if active
+    if combo_count > 0:
+        stdscr.addstr(args.n + 5, 3+COLS*2, f"Combo: {combo_count}x")
+        stdscr.addstr(args.n + 6, 3+COLS*2, f"Current colors are {color} and {bcgd}")
+        return args.n + 9
+    else:
+        stdscr.addstr(args.n + 5, 3+COLS*2, f"Current colors are {color} and {bcgd}")
+        return args.n + 8
 
-    # Draw border
+def draw_border(stdscr):
+    """Draw the game border."""
     stdscr.addstr(1, 0, CORNER_CHAR[0] + TOP_BOTTOM_BORDER_CHAR * (COLS * 2) + CORNER_CHAR[1])
     for y in range(ROWS):
         stdscr.addstr(y + 2, 0, BORDER_CHAR)
         stdscr.addstr(y + 2, COLS * 2 + 1, BORDER_CHAR)
     stdscr.addstr(ROWS + 2, 0, CORNER_CHAR[2] + TOP_BOTTOM_BORDER_CHAR * (COLS * 2) + CORNER_CHAR[3])
 
-    # Draw the board with locked pieces
+def draw_game(stdscr, board, piece, score):
+    """Draws the entire game state to the screen."""
+    stdscr.clear()
+    
+    # draw game info and get hold position
+    hold_y = draw_game_info(stdscr, score)
+    
+    # draw border
+    draw_border(stdscr)
+
+    # draw the board with locked pieces
     for y, row in enumerate(board):
         for x, cell in enumerate(row):
             if cell:
                 stdscr.addstr(y + 2, x * 2 + 1, BLOCK_CHAR * 2)
 
-    # Draw the current falling piece
+    # draw ghost piece (where current piece will land)
+    if piece:
+        ghost_y = get_ghost_piece_position(board, piece)
+        # only draw ghost if it's different from current position
+        if ghost_y != piece["y"]:
+            for y, row in enumerate(piece["shape"]):
+                for x, cell in enumerate(row):
+                    if cell:
+                        ghost_board_y = ghost_y + y
+                        ghost_board_x = piece["x"] + x
+                        if ghost_board_y >= 0 and ghost_board_y < ROWS and ghost_board_x >= 0 and ghost_board_x < COLS:
+                            # only draw ghost if there's no locked piece at this position
+                            if not board[ghost_board_y][ghost_board_x]:
+                                stdscr.addstr(ghost_board_y + 2, ghost_board_x * 2 + 1, "░░")
+
+    # draw the current falling piece
     if piece:
         for y, row in enumerate(piece["shape"]):
             for x, cell in enumerate(row):
@@ -1542,137 +352,223 @@ def draw_game(stdscr, board, piece, score):
                     if piece["y"] + y >= 0:
                         stdscr.addstr(piece["y"] + y + 2, (piece["x"] + x) * 2 + 1, BLOCK_CHAR * 2)
     
+    # draw next piece
+    stdscr.addstr(1, 3+COLS*2, "NEXT:")
     for y, row in enumerate(next_shape):
-            for x, cell in enumerate(row):
-                if cell:
-                    if 0+ y >= 0:
-                        stdscr.addstr(0 + y + 2, (1 + COLS + x) * 2 + 1, BLOCK_CHAR * 2)
+        for x, cell in enumerate(row):
+            if cell:
+                stdscr.addstr(y + 2, (3 + COLS + x) * 2 + 1, BLOCK_CHAR * 2)
+    
+    # draw held piece
+    draw_hold_piece(stdscr, hold_y, 3+COLS*2)
     
     stdscr.refresh()
 
-
-def main(stdscr):
-    global next_shape
-    next_shape = random.choice(SHAPES)  # Initialize the first piece
-    """Main game loop."""
-    # Setup curses
-    curses.curs_set(0)
+def setup_colors():
+    """Setup color configuration based on arguments."""
     global color, bcgd
-    bcgd = args.bc if args.bc is not None else 0  # Background color
+    
+    bcgd = args.bc if args.bc is not None else 0
     
     if args.c is not None:
         if args.c.isdigit():
-           color = int(args.c)
+            color = int(args.c)
         else:
-            match args.c:
-                case 'r':
-                    color = curses.COLOR_RED
-                case 'g':
-                    color = curses.COLOR_GREEN
-                case 'b':
-                    color = curses.COLOR_BLUE
-                case 'y':
-                    color = curses.COLOR_YELLOW
-                case 'c':
-                    color = curses.COLOR_CYAN
-                case _:
-                    color = curses.COLOR_WHITE
+            color_map = {
+                'r': curses.COLOR_RED,
+                'g': curses.COLOR_GREEN,
+                'b': curses.COLOR_BLUE,
+                'y': curses.COLOR_YELLOW,
+                'c': curses.COLOR_CYAN,
+                'm': curses.COLOR_MAGENTA
+            }
+            color = color_map.get(args.c, curses.COLOR_WHITE)
+
+def handle_piece_movement(board, piece, key):
+    """Handle piece movement keys."""
+    if key == curses.KEY_LEFT:
+        if not check_collision(board, piece["shape"], (piece["x"] - 1, piece["y"])):
+            piece["x"] -= 1
+    elif key == curses.KEY_RIGHT:
+        if not check_collision(board, piece["shape"], (piece["x"] + 1, piece["y"])):
+            piece["x"] += 1
+    elif key == curses.KEY_DOWN:
+        if not check_collision(board, piece["shape"], (piece["x"], piece["y"] + 1)):
+            piece["y"] += 1
+            return 1  # soft drop bonus
+    elif key == curses.KEY_UP:
+        rotated = rotate_piece(piece["shape"])
+        wall_kick_result = try_wall_kick(board, piece, rotated)
+        if wall_kick_result:
+            new_x, new_y, new_shape = wall_kick_result
+            piece["x"] = new_x
+            piece["y"] = new_y
+            piece["shape"] = new_shape
+    return 0
+
+def handle_hold_piece(piece):
+    """Handle piece holding."""
+    global can_hold, held_shape
+    if can_hold:
+        if held_shape is None:
+            held_shape = piece["shape"]
+            piece.update(new_piece())
+        else:
+            temp_shape = piece["shape"]
+            piece["shape"] = held_shape
+            held_shape = temp_shape
+            piece["x"] = COLS // 2 - len(piece["shape"][0]) // 2
+            piece["y"] = 0
+        can_hold = False
+
+def handle_color_change(stdscr, key):
+    """Handle color change keys."""
+    global color, bcgd
     
+    if key == ord('j') or key == ord('k'):
+        bcgd += 1 if key == ord('k') else -1
+    if key == ord('u') or key == ord('i'):
+        color += 1 if key == ord('u') else -1
     
+    bcgd = bcgd % curses.COLORS
+    color = color % curses.COLORS
+    curses.init_pair(1, color, bcgd)
+    stdscr.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
+
+def handle_hard_drop(board, piece):
+    """Handle hard drop and return score bonus."""
+    cells_dropped = 0
+    while not check_collision(board, piece["shape"], (piece["x"], piece["y"] + 1)):
+        piece["y"] += 1
+        cells_dropped += 1
+    return cells_dropped * 2
+
+def show_game_over_screen(stdscr, score):
+    """Display game over screen."""
+    stdscr.nodelay(0)
+    
+    # get terminal dimensions to ensure we don't draw outside bounds
+    max_y, max_x = stdscr.getmaxyx()
+    
+    # calculate safe positioning for game over message
+    msg_y = min(ROWS // 2, max_y - 5)  # leave room for multiple lines
+    msg_x = max(0, min((COLS * 2 - 10) // 2, max_x - 20))  # ensure message fits
+    
+    # make sure we have enough space
+    if msg_y < 1:
+        msg_y = 1
+    if msg_x < 1:
+        msg_x = 1
+    
+    try:
+        stdscr.addstr(msg_y, msg_x, "Game Over!")
+        stdscr.addstr(msg_y + 1, msg_x - 3, f"Final Score: {score}")
+        stdscr.addstr(msg_y + 3, msg_x - 4, "Press 'q' to exit")
+        stdscr.refresh()
+    except curses.error:
+        # if drawing fails, clear screen and show simple message
+        stdscr.clear()
+        stdscr.addstr(0, 0, f"Game Over! Score: {score}")
+        stdscr.addstr(1, 0, "Press 'q' to exit")
+        stdscr.refresh()
+    
+    # wait for 'q' key specifically
+    while True:
+        key = stdscr.getch()
+        if key == ord('q') or key == ord('Q'):
+            break
+
+def main(stdscr):
+    global next_shape
+    next_shape = random.choice(SHAPES)  # initialize the first piece
+    """Main game loop."""
+    # setup curses
+    curses.curs_set(0)
+    global level, total_lines, combo_count, last_action_was_clear, can_hold
+    
+    setup_colors()
     curses.start_color()
-    curses.init_pair(1, color, bcgd)  # Set color pair for blocks
+    curses.init_pair(1, color, bcgd)  # set color pair for blocks
     stdscr.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
     stdscr.nodelay(1)
-    stdscr.timeout(20)  # Game tick speed like PAL
+    stdscr.timeout(20)  # game tick speed like PAL
 
-    # Game state initialization
+    # game state initialization
     board = create_board()
     piece = new_piece()
     score = 0
-    global level
-    global total_lines
     game_over = False
     fall_counter = 0
     fall_speed = 36  # starting speed, lower is faster
+    
+    if args.n < 4:
+        fall_speed = 36 - 6*(4-args.n)
 
     while not game_over:
         key = stdscr.getch()
         fall_counter += 1
 
-        # --- Handle User Input ---
+        # --- handle user input ---
         if key == ord('q') or key == ord('Q'):
             break
-        elif key == curses.KEY_LEFT:
-            if not check_collision(board, piece["shape"], (piece["x"] - 1, piece["y"])):
-                piece["x"] -= 1
-        elif key == curses.KEY_RIGHT:
-            if not check_collision(board, piece["shape"], (piece["x"] + 1, piece["y"])):
-                piece["x"] += 1
-        elif key == curses.KEY_DOWN:
-            # Soft drop, reset fall counter
-            fall_counter = 0
-            if not check_collision(board, piece["shape"], (piece["x"], piece["y"] + 1)):
-                piece["y"] += 1
-                score += 1  # Increment score for soft drop
-        elif key == curses.KEY_UP:
-            rotated = rotate_piece(piece["shape"])
-            if not check_collision(board, rotated, (piece["x"], piece["y"])):
-                piece["shape"] = rotated
-        elif key == ord('k') or key == ord('j') or key == ord('u') or key == ord('i'):
-            if key == ord('j') or  key == ord('k'):
-                bcgd += 1 if key == ord('k') else -1
-            if key == ord('u') or key == ord('i'):
-                color += 1 if key == ord('u') else -1
-            
-            bcgd = bcgd % curses.COLORS  # Ensure background color is within valid range
-            color = color % curses.COLORS  # Ensure block color is within valid range
-            curses.init_pair(1, color, bcgd)
-            stdscr.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
-        elif key == 10:  
-            # hard drop
+        elif key in [curses.KEY_LEFT, curses.KEY_RIGHT, curses.KEY_DOWN, curses.KEY_UP]:
+            if key == curses.KEY_DOWN:
+                fall_counter = 0  # reset fall counter for soft drop
+            score += handle_piece_movement(board, piece, key)
+        elif key == ord('c') or key == ord('C'):
+            handle_hold_piece(piece)
+        elif key in [ord('k'), ord('j'), ord('u'), ord('i')]:
+            handle_color_change(stdscr, key)
+        elif key == 10:  # hard drop
             fall_counter = fall_speed
-            
-            while not check_collision(board, piece["shape"], (piece["x"], piece["y"] + 1)):
-                piece["y"] += 1
-                score += 2 # Increment score for hard drop
+            score += handle_hard_drop(board, piece)
 
-        # --- Game Logic (Automatic Drop) ---
+        # --- game logic (automatic drop) ---
         if fall_counter >= fall_speed:
             fall_counter = 0
             if not check_collision(board, piece["shape"], (piece["x"], piece["y"] + 1)):
                 piece["y"] += 1
             else:
-                # Piece has landed, lock it
+                # piece has landed, lock it
                 board = lock_piece(board, piece)
                 board, lines_cleared = clear_lines(board)
                 
-                # Update score (Tetris scoring system)
-                score_map = {1: 100, 2: 300, 3: 500, 4: 800, 5: 1600}
-                score += score_map.get(lines_cleared, 0)
-                total_lines += lines_cleared
+                # handle scoring with combo system
+                if lines_cleared > 0:
+                    # if last action was also a line clear, increment combo
+                    if last_action_was_clear:
+                        combo_count += 1
+                    else:
+                        combo_count = 0  # reset combo if previous action wasn't a clear
+                    
+                    # calculate score with level and combo bonuses
+                    line_score = calculate_score(lines_cleared, level, combo_count)
+                    score += line_score
+                    total_lines += lines_cleared
+                    last_action_was_clear = True
+                else:
+                    # no lines cleared, reset combo
+                    combo_count = 0
+                    last_action_was_clear = False
 
-                # Get new piece
+                # get new piece and allow holding again
                 piece = new_piece()
+                can_hold = True
                 
-                # Check for game over
+                # check for game over
                 if check_collision(board, piece["shape"], (piece["x"], piece["y"])):
                     game_over = True
         
-        if total_lines >= (10 * level+1):
+        if total_lines >= 5+level:
             level += 1
-            fall_speed = max(2, floor(fall_speed * 0.855))  # Increase speed every 10 lines cleared
+            total_lines = 0
+            fall_speed = max(2, floor(fall_speed * 0.855))  # increase speed every 10 lines cleared
 
-        # --- Drawing ---
+        # draw game
         draw_game(stdscr, board, piece, score)
 
-    # --- Game Over Screen ---
-    stdscr.nodelay(0)
-    msg_y = ROWS // 2
-    msg_x = (COLS * 2 - 10) // 2
-    stdscr.addstr(msg_y, msg_x, "Game Over!")
-    stdscr.addstr(msg_y + 1, msg_x - 3, f"Final Score: {score}")
-    stdscr.addstr(msg_y + 3, msg_x - 4, "Press any key to exit")
-    stdscr.getch()
+    # game over
+    show_game_over_screen(stdscr, score)
 
 if __name__ == "__main__":
     try:
