@@ -23,7 +23,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 - **Extended Mode**: Enable with `-e` flag to add non-standard polyominos (polykings) that can connect at vertices
 
-- **Mix Mode**: Enable with `-m` flag to include polyominos of lower order (e.g., in Tetris mode, also get Tris and Dis pieces)
+- **Mix Mode**: Enable with `-m` flag to include polyominos of lower order (e.g., in Tetris mode, also get Tris, Dis and monois pieces)
 
 - **Advanced Gameplay Features**:
   - **Hold System**: Hold pieces for later use with 'c' key
@@ -36,9 +36,8 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
   - Change colors during gameplay with j/k and u/i
 
 - **Progressive Difficulty**: 
-  - Fall speed increases with each level
+  - Fall speed increases with each level by around 14.5%
   - Scoring system with level and combo multipliers
-
 ## Installation & Usage
 
 ### Prerequisites
@@ -132,11 +131,6 @@ The executable will be available in the `dist/` directory.
 - Fall speed increases by ~14.5% each level
 - Minimum fall speed prevents game from becoming unplayable
 
-### Special Features
-- **Ghost Piece**: Translucent preview showing where piece will land
-- **Hold System**: Store one piece for later use (once per piece)
-- **Extended Polyominos / Polykings**: Non-standard shapes that connect at vertices
-
 ## Compatibility
 
 | Operating System | Status | Notes |
@@ -148,7 +142,7 @@ The executable will be available in the `dist/` directory.
 ## Troubleshooting
 
 **Error: "Your terminal may not be supported, or it probably is too small"**
-- Solution: Increase your terminal window size
+- Solution: Increase your terminal window size, or make font smaller
 - For higher N values, larger terminals may be required
 
 **Colors not displaying correctly:**
