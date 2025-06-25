@@ -1,6 +1,6 @@
 # N-is: A Generalized Tetris Game
 
-N-is is a terminal-based puzzle game that generalizes the classic Tetris concept to work with polyominos of any size from 1 to 6 blocks. Play traditional Tetris (4 blocks) or experiment with Tris (3 blocks), Dis (2 blocks), Pentis (5 blocks), or even Hexis (6 blocks)!
+N-is is a terminal-based puzzle game that generalizes the classic Tetris concept to work with polyominos and polykings of any size from 1 to 6 blocks. Play traditional Tetris (4 blocks) or experiment with Tris (3 blocks), Dis (2 blocks), Pentis (5 blocks), or even Hexis (6 blocks)!
 
 <figure>
     <img src="./example.png">
