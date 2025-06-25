@@ -15,7 +15,9 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
   - **3**: "Tris" (triomino shapes)
   - **4**: "Tetris" (classic tetromino shapes)
   - **5**: "Pentis" (pentomino shapes - more challenging)
-  - **6**: "Hexis" (hexomino shapes - extremely challenging)
+  - **6**: "Hexis" (hexomino shapes - extremely challenging, nearly unplayable)
+
+  Heptis will probably never be made because even hexis is not very fun, and heptis just simply has no reason to exist.
 
 - **Interactive Menu System**: Run without arguments to access a user-friendly curses-based menu for selecting game options
 
@@ -121,8 +123,8 @@ The executable will be available in the `dist/` directory.
   - 2 lines: 120 × (level + 1)  
   - 3 lines: 360 × (level + 1)
   - 4 lines: 1200 × (level + 1)
-  - 5 lines: 4096 * (level + 1)
-  - 6 lines: 16384 * (level + 1)
+  - 5 lines: 4096 × (level + 1)
+  - 6 lines: 16384 × (level + 1)
 - **Combo Bonus**: Additional points for consecutive line clears
 - **Drop Bonus**: 1 point per cell for soft drop, 2 points per cell for hard drop
 
@@ -150,6 +152,5 @@ The executable will be available in the `dist/` directory.
 - For higher N values, larger terminals may be required
 
 **Colors not displaying correctly:**
-- Ensure your terminal supports 256 colors
 - Try different color values (0-255)
 - Some terminals may have limited color support
