@@ -201,14 +201,8 @@ def try_wall_kick(board, piece, rotated_shape):
         (1, 0),   # right kick
         (-2, 0),  # left kick 2
         (2, 0),   # right kick 2
-        (0, -1),  # up kick
-        (-1, -1), # left-up kick
-        (1, -1),  # right-up kick
-        (-2, -1), # left-up kick 2
-        (2, -1),  # right-up kick 2
-        (0, 1),   # down kick
-        (-1, 1),  # left-down kick
-        (1, 1),   # right-down kick
+        (-3, 0),  # left kick 2
+        (3, 0),   # right kick 2
     ]
     
     for dx, dy in kick_offsets:
@@ -294,16 +288,14 @@ def draw_game_info(stdscr, score):
     
     draw_progress_bar(stdscr, args.n + 3, 3+COLS*2, 15, total_lines, 5+level, "Progress: ")
     
-    stdscr.addstr(args.n + 4, 3+COLS*2, f"Lines cleared: {total_lines}")
-    
     # show combo count if active
     if combo_count > 0:
-        stdscr.addstr(args.n + 5, 3+COLS*2, f"Combo: {combo_count}x")
-        stdscr.addstr(args.n + 6, 3+COLS*2, f"Current colors are {color} and {bcgd}")
-        return args.n + 9
-    else:
+        stdscr.addstr(args.n + 4, 3+COLS*2, f"Combo: {combo_count}x")
         stdscr.addstr(args.n + 5, 3+COLS*2, f"Current colors are {color} and {bcgd}")
-        return args.n + 8
+        return args.n + 7
+    else:
+        stdscr.addstr(args.n + 4, 3+COLS*2, f"Current colors are {color} and {bcgd}")
+        return args.n + 6
 
 def draw_border(stdscr):
     """Draw the game border."""
@@ -336,13 +328,14 @@ def draw_game(stdscr, board, piece, score):
         if ghost_y != piece["y"]:
             for y, row in enumerate(piece["shape"]):
                 for x, cell in enumerate(row):
-                    if cell:
-                        ghost_board_y = ghost_y + y
-                        ghost_board_x = piece["x"] + x
-                        if ghost_board_y >= 0 and ghost_board_y < ROWS and ghost_board_x >= 0 and ghost_board_x < COLS:
-                            # only draw ghost if there's no locked piece at this position
-                            if not board[ghost_board_y][ghost_board_x]:
-                                stdscr.addstr(ghost_board_y + 2, ghost_board_x * 2 + 1, "░░")
+                    if not cell:
+                        continue
+                    ghost_board_y = ghost_y + y
+                    ghost_board_x = piece["x"] + x
+                    # check bounds and if position is empty
+                    if (0 <= ghost_board_y < ROWS and 0 <= ghost_board_x < COLS and 
+                        not board[ghost_board_y][ghost_board_x]):
+                        stdscr.addstr(ghost_board_y + 2, ghost_board_x * 2 + 1, "░░")
 
     # draw the current falling piece
     if piece:
@@ -444,32 +437,22 @@ def handle_hard_drop(board, piece):
     return cells_dropped * 2
 
 def show_game_over_screen(stdscr, score):
-    """Display game over screen."""
+    """Display game over screen centered in the game board."""
     stdscr.nodelay(0)
     
-    # get terminal dimensions to ensure we don't draw outside bounds
-    max_y, max_x = stdscr.getmaxyx()
-    
-    # calculate safe positioning for game over message
-    msg_y = min(ROWS // 2, max_y - 5)  # leave room for multiple lines
-    msg_x = max(0, min((COLS * 2 - 10) // 2, max_x - 20))  # ensure message fits
-    
-    # make sure we have enough space
-    if msg_y < 1:
-        msg_y = 1
-    if msg_x < 1:
-        msg_x = 1
+    # calculate center position within the game board
+    board_center_y = ROWS // 2  # board starts at y=2
+    board_center_x = 1 + COLS  # board starts at x=1, center is at COLS
     
     try:
-        stdscr.addstr(msg_y, msg_x, "Game Over!")
-        stdscr.addstr(msg_y + 1, msg_x - 3, f"Final Score: {score}")
-        stdscr.addstr(msg_y + 3, msg_x - 4, "Press 'q' to exit")
+        stdscr.addstr(board_center_y - 1, board_center_x - 5, "Game Over!")
+        stdscr.addstr(board_center_y, board_center_x - 7, f"Final Score: {score}")
+        stdscr.addstr(board_center_y + 3, board_center_x - 8, "Press 'q' to exit")
         stdscr.refresh()
     except curses.error:
         # if drawing fails, clear screen and show simple message
-        stdscr.clear()
-        stdscr.addstr(0, 0, f"Game Over! Score: {score}")
-        stdscr.addstr(1, 0, "Press 'q' to exit")
+        stdscr.addstr(2*args.n+8, COLS*2+2, f"Game Over! Score: {score}")
+        stdscr.addstr(2*args.n+9, COLS*2+2, "Press 'q' to exit")
         stdscr.refresh()
     
     # wait for 'q' key specifically
@@ -477,6 +460,31 @@ def show_game_over_screen(stdscr, score):
         key = stdscr.getch()
         if key == ord('q') or key == ord('Q'):
             break
+
+def show_pause_screen(stdscr):
+    """Display pause screen centered in the game board."""
+    stdscr.nodelay(0)  # disable non-blocking input
+    
+    # calculate center position within the game board
+    board_center_y = ROWS // 2  # board starts at y=2
+    board_center_x = 1 + COLS  # board starts at x=1, center is at COLS
+    
+    try:
+        stdscr.addstr(board_center_y, board_center_x - 3, "PAUSED")
+        stdscr.addstr(board_center_y + 2, board_center_x - 11, "Press any key to resume")
+        stdscr.refresh()
+    except curses.error:
+        # if drawing fails, clear screen and show simple message
+        stdscr.addstr(board_center_y, board_center_x - 3, "PAUSED")
+        stdscr.addstr(2*args.n + 8, COLS*2+2, "Press any key to resume")
+        stdscr.refresh()
+    
+    # wait for any key to resume
+    stdscr.getch()
+    
+    # restore non-blocking input
+    stdscr.nodelay(1)
+    stdscr.timeout(20)
 
 def main(stdscr):
     global next_shape
@@ -522,7 +530,9 @@ def main(stdscr):
         elif key == 10:  # hard drop
             fall_counter = fall_speed
             score += handle_hard_drop(board, piece)
-
+        elif key == ord('p'):
+            show_pause_screen(stdscr)
+        
         # --- game logic (automatic drop) ---
         if fall_counter >= fall_speed:
             fall_counter = 0
