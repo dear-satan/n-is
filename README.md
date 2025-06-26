@@ -4,7 +4,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 <figure>
     <img src="./example.png">
-    <figcaption>Example game of tetris with extended mode enabled.</figcaption>
+    <figcaption>Example game of tetris with polykings.</figcaption>
 </figure>
 
 ## Features
