@@ -108,6 +108,7 @@ The executable will be available in the `dist/` directory.
 
 ### Game Features
 - **C**: Hold current piece (swap with held piece)
+- **P**: Pause game (press any key to resume)
 - **Q**: Quit game
 
 ### Visual Customization (During Game)

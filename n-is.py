@@ -440,9 +440,8 @@ def show_game_over_screen(stdscr, score):
     """Display game over screen centered in the game board."""
     stdscr.nodelay(0)
     
-    # calculate center position within the game board
-    board_center_y = ROWS // 2  # board starts at y=2
-    board_center_x = 1 + COLS  # board starts at x=1, center is at COLS
+    board_center_y = ROWS // 2
+    board_center_x = 1 + COLS
     
     try:
         stdscr.addstr(board_center_y - 1, board_center_x - 5, "Game Over!")
@@ -466,7 +465,7 @@ def show_pause_screen(stdscr):
     stdscr.nodelay(0)  # disable non-blocking input
     
     # calculate center position within the game board
-    board_center_y = ROWS // 2  # board starts at y=2
+    board_center_y = ROWS // 2
     board_center_x = 1 + COLS  # board starts at x=1, center is at COLS
     
     try:
@@ -474,7 +473,6 @@ def show_pause_screen(stdscr):
         stdscr.addstr(board_center_y + 2, board_center_x - 11, "Press any key to resume")
         stdscr.refresh()
     except curses.error:
-        # if drawing fails, clear screen and show simple message
         stdscr.addstr(board_center_y, board_center_x - 3, "PAUSED")
         stdscr.addstr(2*args.n + 8, COLS*2+2, "Press any key to resume")
         stdscr.refresh()
@@ -530,7 +528,7 @@ def main(stdscr):
         elif key == 10:  # hard drop
             fall_counter = fall_speed
             score += handle_hard_drop(board, piece)
-        elif key == ord('p'):
+        elif key == ord('p') or key == ord('P'):
             show_pause_screen(stdscr)
         
         # --- game logic (automatic drop) ---
