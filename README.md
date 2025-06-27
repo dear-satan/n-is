@@ -99,16 +99,6 @@ python n-is.py 5 -c g -bc 0 # Green Pentis on black background
 python n-is.py 4 -m         # Tetris with Tris and Dis pieces included
 ```
 
-### Alternative Installation
-
-You can also compile the game into an executable:
-
-```bash
-pyinstaller n-is.py
-```
-
-The executable will be available in the `dist/` directory.
-
 ## Game Controls
 
 ### Movement & Rotation
