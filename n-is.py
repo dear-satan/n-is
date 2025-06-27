@@ -1,9 +1,9 @@
+import os
 import curses
 import random
 from math import floor
 import argparse as arg
 import polyshapes as ps
-import os
 
 # Try to import pygame for audio support
 try:
