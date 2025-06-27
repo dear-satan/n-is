@@ -38,6 +38,8 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 - **Progressive Difficulty**: 
   - Fall speed increases with each level by around 14.5%
   - Scoring system with level and combo multipliers
+
+- **Background Music**: Multiple music options available in the interactive menu
 ## Installation & Usage
 
 ### Prerequisites
@@ -111,6 +113,10 @@ The executable will be available in the `dist/` directory.
 - **P**: Pause game (press any key to resume)
 - **Q**: Quit game
 
+### Audio Controls
+- **M**: Toggle all sound and music on/off
+- **Page Up/Page Down**: Adjust music volume
+
 ### Visual Customization (During Game)
 - **U/I**: Change main block color (previous/next)
 - **J/K**: Change background color (previous/next)
@@ -131,6 +137,17 @@ The executable will be available in the `dist/` directory.
 ### Level Progression
 - Fall speed increases by ~14.5% each level
 - Minimum fall speed prevents game from becoming unplayable
+
+## Music Attribution
+
+The game includes background music from the following sources:
+
+- **Clair de lune (Claude Debussy) Suite bergamasque** by [Laurens Goedhart](https://en.wikipedia.org/wiki/File:Clair_de_lune_(Claude_Debussy)_Suite_bergamasque.ogg) is licensed under [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
+
+- **Tetris Theme (Korobeiniki) arrangements** by [GregorQuendel](https://pixabay.com/users/gregorquendel-19912121/) are licensed under the [Pixabay License](https://pixabay.com/service/license-summary/):
+  - Piano arrangement
+  - Music box arrangement  
+  - String arrangement
 
 ## Compatibility
 
