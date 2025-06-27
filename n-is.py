@@ -3,9 +3,17 @@ import random
 from math import floor
 import argparse as arg
 import polyshapes as ps
-import pygame
 import os
-import numpy as np
+
+# Try to import pygame for audio support
+try:
+    import pygame
+    import numpy as np
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    pygame = None
+    np = None
 
 # constants
 BLOCK_CHAR = "█"
@@ -75,7 +83,7 @@ can_hold = True
 combo_count = 0
 last_action_was_clear = False
 color, bcgd = curses.COLOR_WHITE, 0
-sound_enabled = True
+sound_enabled = False
 sound_on = True
 is_paused = False
 vol = 0
@@ -84,6 +92,11 @@ def init_sound(selected_music=None):
     """Initialize pygame mixer for sound effects."""
     global sound_enabled
     global vol
+    
+    if not PYGAME_AVAILABLE:
+        sound_enabled = False
+        return
+    
     try:
         pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
         pygame.mixer.init()
@@ -115,7 +128,7 @@ def init_sound(selected_music=None):
 
 def cleanup_sound():
     """Clean up pygame mixer."""
-    if sound_enabled:
+    if sound_enabled and PYGAME_AVAILABLE:
         try:
             pygame.mixer.music.stop()
             pygame.mixer.quit()
@@ -124,7 +137,7 @@ def cleanup_sound():
 
 def generate_simple_tone(frequency, duration, wave_type='sine', volume=0.15):
     """Generate a simple tone"""
-    if not sound_enabled or not sound_on:
+    if not sound_enabled or not sound_on or not PYGAME_AVAILABLE:
         return None
     try:
         sample_rate = 22050 # i find this value good enough
@@ -152,7 +165,7 @@ def generate_simple_tone(frequency, duration, wave_type='sine', volume=0.15):
 
 def play_sound_effect(frequency, duration=100, wave_type='sine', volume=0.15):
     """Play a simple sound effect."""
-    if not sound_enabled or not sound_on:
+    if not sound_enabled or not sound_on or not PYGAME_AVAILABLE:
         return
     try:
         sound = generate_simple_tone(frequency, duration, wave_type, volume)
@@ -163,6 +176,8 @@ def play_sound_effect(frequency, duration=100, wave_type='sine', volume=0.15):
 
 def sound_line_clear(lines):
     """play sounds for cleaning lines"""
+    if not PYGAME_AVAILABLE:
+        return
     if lines == 1:
         # Single line
         play_sound_effect(523, 120, 'triangle', 0.12)  # C5
@@ -201,6 +216,8 @@ def sound_piece_rotate():
 
 def sound_level_up():
     """Play when level increases."""
+    if not PYGAME_AVAILABLE:
+        return
     notes = [(523, 80), (784, 80), (1047, 80)]  # C5, G5, C6
     
     for i, (freq, duration) in enumerate(notes):
@@ -213,6 +230,8 @@ def sound_level_up():
 
 def sound_game_over():
     """Play simplified dramatic game over arpeggio."""
+    if not PYGAME_AVAILABLE:
+        return
     if sound_enabled and sound_on:
         pygame.mixer.music.stop()
     
@@ -229,7 +248,7 @@ def sound_game_over():
 def toggle_all_sound():
     """Toggle all sound effects and music on/off."""
     global sound_on
-    if not sound_enabled:
+    if not sound_enabled or not PYGAME_AVAILABLE:
         return
     
     sound_on = not sound_on
@@ -839,7 +858,7 @@ def show_pause_screen(stdscr):
     is_paused = True
     
     # reduce music volume during pause
-    if sound_enabled and sound_on:
+    if sound_enabled and sound_on and PYGAME_AVAILABLE:
         try:
             pygame.mixer.music.set_volume(vol/8)  # Reduced volume
         except:
@@ -878,7 +897,7 @@ def show_pause_screen(stdscr):
     is_paused = False
     
     # restore music volume to normal
-    if sound_enabled and sound_on:
+    if sound_enabled and sound_on and PYGAME_AVAILABLE:
         try:
             pygame.mixer.music.set_volume(vol)  # Restore original volume
         except:
@@ -943,15 +962,16 @@ def main(stdscr):
             toggle_all_sound()
         elif key == curses.KEY_PPAGE or key == curses.KEY_NPAGE:
             # Volume control with Page Up/Page Down
-            vol += 0.1 if key == curses.KEY_PPAGE else -0.1
-            if vol > 1 or vol < 0:
-                vol = max(0, min(1, vol))
-                play_sound_effect(440, 100)
-            if sound_enabled and sound_on:
-                try:
-                    pygame.mixer.music.set_volume(vol)
-                except:
-                    pass
+            if PYGAME_AVAILABLE:
+                vol += 0.1 if key == curses.KEY_PPAGE else -0.1
+                if vol > 1 or vol < 0:
+                    vol = max(0, min(1, vol))
+                    play_sound_effect(440, 100)
+                if sound_enabled and sound_on:
+                    try:
+                        pygame.mixer.music.set_volume(vol)
+                    except:
+                        pass
         
         # --- game logic (automatic drop) ---
         if fall_counter >= fall_speed:
