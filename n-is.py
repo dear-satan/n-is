@@ -378,13 +378,14 @@ def show_option_menu(stdscr, title, options, option_texts, selected_info=""):
 
 def show_menu(stdscr):
     """Show enhanced menu with ASCII art to select n, ext and mix options."""
+    global bcgd
     curses.curs_set(0)
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
-    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
-    curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+    curses.init_pair(1, curses.COLOR_CYAN, bcgd)
+    curses.init_pair(2, curses.COLOR_YELLOW, bcgd)
+    curses.init_pair(3, curses.COLOR_GREEN, bcgd)
+    curses.init_pair(4, curses.COLOR_RED, bcgd)
+    curses.init_pair(5, curses.COLOR_MAGENTA, bcgd)
 
     # show welcome screen first
     stdscr.clear()
@@ -889,11 +890,12 @@ def handle_hard_drop(board, piece):
 
 def show_game_over_screen(stdscr, score):
     """Display enhanced game over screen."""
+    global bcgd
     stdscr.nodelay(0)
     curses.start_color()
-    curses.init_pair(6, curses.COLOR_RED, curses.COLOR_BLACK)
-    curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(6, curses.COLOR_RED, bcgd)
+    curses.init_pair(7, curses.COLOR_YELLOW, bcgd)
+    curses.init_pair(8, curses.COLOR_CYAN, bcgd)
 
     max_y, max_x = stdscr.getmaxyx()
 
@@ -938,6 +940,7 @@ def show_pause_screen(stdscr):
     """Display enhanced pause screen."""
     global is_paused
     global vol
+    global bcgd
     is_paused = True
 
     # reduce music volume during pause
@@ -949,8 +952,8 @@ def show_pause_screen(stdscr):
 
     stdscr.nodelay(0)
     curses.start_color()
-    curses.init_pair(9, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(10, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(9, curses.COLOR_YELLOW, bcgd)
+    curses.init_pair(10, curses.COLOR_CYAN, bcgd)
 
     max_y, max_x = stdscr.getmaxyx()
 
