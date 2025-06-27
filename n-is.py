@@ -136,7 +136,6 @@ def generate_simple_tone(frequency, duration, wave_type='sine', volume=0.15):
             if wave_type == 'sine':
                 wave = volume * np.sin(2 * np.pi * frequency * t)
             elif wave_type == 'triangle':
-                # Triangle wave: sawtooth that bounces between -1 and 1
                 wave = volume * (2 * np.abs(2 * (t * frequency - np.floor(t * frequency + 0.5))) - 1)
             elif wave_type == 'square':
                 wave = volume * (1 if np.sin(2 * np.pi * frequency * t) >= 0 else -1)
@@ -145,7 +144,7 @@ def generate_simple_tone(frequency, duration, wave_type='sine', volume=0.15):
             
             arr[i] = [wave, wave]
         
-        # Convert to 16-bit integers
+        # convert to 16-bit integers
         arr = (arr * 32767).astype(np.int16)
         return pygame.sndarray.make_sound(arr)
     except:
@@ -156,9 +155,7 @@ def play_sound_effect(frequency, duration=100, wave_type='sine', volume=0.15):
     if not sound_enabled or not sound_on:
         return
     try:
-        # Reduce volume when paused
-        actual_volume = volume * 0.3 if is_paused else volume
-        sound = generate_simple_tone(frequency, duration, wave_type, actual_volume)
+        sound = generate_simple_tone(frequency, duration, wave_type, volume)
         if sound:
             sound.play()
     except:
@@ -212,7 +209,7 @@ def sound_level_up():
             pygame.time.wait(35)
     
     pygame.time.wait(100)
-    play_sound_effect(1047, 400, 'sine', 0.16)  # Final sustained note
+    play_sound_effect(1047, 400, 'sine', 0.16)
 
 def sound_game_over():
     """Play simplified dramatic game over arpeggio."""
@@ -238,7 +235,7 @@ def toggle_all_sound():
     sound_on = not sound_on
     
     if sound_on:
-        # Resume music if it was playing
+        # resume music if it was playing
         music_file = os.path.join(os.path.dirname(__file__), "music.mp3")
         if os.path.exists(music_file):
             try:
@@ -247,10 +244,10 @@ def toggle_all_sound():
             except:
                 pass
     else:
-        # Stop all sounds
+        # stop all sounds
         try:
             pygame.mixer.music.stop()
-            pygame.mixer.stop()  # Stop all sound effects
+            pygame.mixer.stop()  # stop all sound effects
         except:
             pass
 
@@ -267,15 +264,15 @@ def show_option_menu(stdscr, title, options, option_texts, selected_info=""):
         stdscr.clear()
         max_y, max_x = stdscr.getmaxyx()
         
-        # Draw decorative border
+        # draw decorative border
         stdscr.addstr(2, (max_x - len(MENU_BORDER_TOP)) // 2, MENU_BORDER_TOP, curses.color_pair(1))
         
-        # Instructions
+        # instructions
         instruction_text = "Use ↑↓ arrows to navigate, Enter to select, Q to quit"
         if 3 < max_y - 1 and len(instruction_text) < max_x:
             stdscr.addstr(3, (max_x - len(instruction_text)) // 2, instruction_text, curses.color_pair(2))
         
-        # Selected info
+        # selected info
         start_y = 6
         if selected_info:
             info_lines = selected_info.split('\n')
@@ -284,12 +281,12 @@ def show_option_menu(stdscr, title, options, option_texts, selected_info=""):
                     stdscr.addstr(start_y + i, (max_x - len(line)) // 2, line, curses.color_pair(3))
             start_y += len(info_lines) + 2
         
-        # Title with decorative elements
+        # title with decorative elements
         title_decorated = f"✦ {title} ✦"
         if start_y < max_y - 1 and len(title_decorated) < max_x:
             stdscr.addstr(start_y, (max_x - len(title_decorated)) // 2, title_decorated, curses.color_pair(1) | curses.A_BOLD)
         
-        # Menu options
+        # menu options
         for i, text in enumerate(option_texts):
             option_y = start_y + 3 + i
             if option_y >= max_y - 1:
@@ -307,7 +304,7 @@ def show_option_menu(stdscr, title, options, option_texts, selected_info=""):
             if len(full_text) < max_x:
                 stdscr.addstr(option_y, (max_x - len(full_text)) // 2, full_text, color)
         
-        # Bottom border
+        # bottom border
         bottom_y = start_y + 5 + len(option_texts)
         if bottom_y < max_y - 1:
             stdscr.addstr(bottom_y, (max_x - len(MENU_BORDER_BOTTOM)) // 2, MENU_BORDER_BOTTOM, curses.color_pair(1))
@@ -338,17 +335,17 @@ def show_menu(stdscr):
     curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
     curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
     
-    # Show welcome screen first
+    # show welcome screen first
     stdscr.clear()
     max_y, max_x = stdscr.getmaxyx()
     
-    # Display ASCII art logo
+    # display ASCII art logo
     logo_start_y = max(1, (max_y - len(TETRIS_LOGO) - 8) // 2)
     for i, line in enumerate(TETRIS_LOGO):
         if logo_start_y + i < max_y - 1 and len(line) < max_x:
             stdscr.addstr(logo_start_y + i, (max_x - len(line)) // 2, line, curses.color_pair(1) | curses.A_BOLD)
     
-    # Welcome message
+    # welcome message
     welcome_msg = "Welcome to N-is!"
     subtitle = "Generalized Tetris from Monois to Hexis"
     
@@ -357,22 +354,22 @@ def show_menu(stdscr):
         stdscr.addstr(msg_y, (max_x - len(welcome_msg)) // 2, welcome_msg, curses.color_pair(2) | curses.A_BOLD)
         stdscr.addstr(msg_y + 1, (max_x - len(subtitle)) // 2, subtitle, curses.color_pair(3))
     
-    # Continue prompt
+    # continue prompt
     continue_msg = "Press any key to continue..."
     if msg_y + 4 < max_y - 1:
         stdscr.addstr(msg_y + 4, (max_x - len(continue_msg)) // 2, continue_msg, curses.color_pair(1) | curses.A_BLINK)
     
     stdscr.refresh()
-    stdscr.getch()  # Wait for key press
+    stdscr.getch()  # wait for key press
     
-    # Select game type
+    # select game type
     n_options = [1, 2, 3, 4, 5, 6]
     n_texts = [f"{n} - {GAME_NAMES[i]}is" for i, n in enumerate(n_options)]
     selected_n = show_option_menu(stdscr, "Select Game Type", n_options, n_texts)
     if selected_n is None:
         return None, None, None, None
     
-    # Select extended mode
+    # select extended mode
     ext_options = [False, True]
     ext_texts = ["Standard Polyominos", "Extended Mode (+ Polykings)"]
     selected_info = f"Selected: {selected_n}-block {GAME_NAMES[selected_n-1]}is\n\nStandard mode uses classic polyominos\nExtended mode adds pseudo-polyominos (polykings)"
@@ -380,7 +377,7 @@ def show_menu(stdscr):
     if selected_ext is None:
         return None, None, None, None
     
-    # Select mix mode
+    # select mix mode
     mix_options = [False, True]
     mix_texts = ["Pure Mode (single type)", "Mix Mode (multiple types)"]
     mix_info = f"Selected: {selected_n}-block {GAME_NAMES[selected_n-1]}is\nMode: {'Extended' if selected_ext else 'Standard'}\n\nPure mode uses only {selected_n}-block pieces\nMix mode includes pieces with fewer blocks too"
@@ -598,17 +595,17 @@ def draw_game_info(stdscr, score):
     global total_lines, combo_count, color, bcgd
     
     try:
-        # Main title with decorative elements
+        # main title with decorative elements
         title = f"Score: {score} | Playing {name_of_game}is {add_text}"
         stdscr.addstr(0, 0, title)
         
-        # Level information
+        # level information
         stdscr.addstr(args.n + 2, 3+COLS*2, f"Level: {level}")
         
-        # Progress bar
+        # progress bar
         draw_progress_bar(stdscr, args.n + 3, 3+COLS*2, 15, total_lines, 5+level, "Progress: ")
         
-        # Combo display
+        # combo display
         if combo_count > 0:
             stdscr.addstr(args.n + 4, 3+COLS*2, f"COMBO: {combo_count}x")
             stdscr.addstr(args.n + 5, 3+COLS*2, f"Colors: {color}/{bcgd}")
@@ -622,16 +619,16 @@ def draw_game_info(stdscr, score):
 def draw_border(stdscr):
     """Draw enhanced game border with decorative elements."""
     try:
-        # Top border
+        # top border
         top_border = CORNER_CHAR[0] + TOP_BOTTOM_BORDER_CHAR * (COLS * 2) + CORNER_CHAR[1]
         stdscr.addstr(1, 0, top_border)
         
-        # Side borders
+        # side borders
         for y in range(ROWS):
             stdscr.addstr(y + 2, 0, BORDER_CHAR)
             stdscr.addstr(y + 2, COLS * 2 + 1, BORDER_CHAR)
         
-        # Bottom border
+        # bottom border
         bottom_border = CORNER_CHAR[2] + TOP_BOTTOM_BORDER_CHAR * (COLS * 2) + CORNER_CHAR[3]
         stdscr.addstr(ROWS + 2, 0, bottom_border)
     except curses.error:
@@ -642,7 +639,7 @@ def draw_next_piece_box(stdscr):
     start_x = 3 + COLS * 2
     start_y = 1
     
-    # Box border
+    # box border
     stdscr.addstr(start_y, start_x, "┌─ NEXT ─┐")
     for i in range(1, 6):
         stdscr.addstr(start_y + i, start_x, "│        │")
@@ -841,7 +838,7 @@ def show_pause_screen(stdscr):
     global vol
     is_paused = True
     
-    # Reduce music volume during pause
+    # reduce music volume during pause
     if sound_enabled and sound_on:
         try:
             pygame.mixer.music.set_volume(vol/8)  # Reduced volume
@@ -855,13 +852,13 @@ def show_pause_screen(stdscr):
     
     max_y, max_x = stdscr.getmaxyx()
     
-    # Display pause ASCII art
+    # display pause ASCII art
     art_start_y = max(1, (max_y - len(PAUSE_ART) - 6) // 2)
     for i, line in enumerate(PAUSE_ART):
         if art_start_y + i < max_y - 1 and len(line) < max_x:
             stdscr.addstr(art_start_y + i, (max_x - len(line)) // 2, line, curses.color_pair(9) | curses.A_BOLD)
     
-    # Instructions
+    # instructions
     resume_text = "Press any key to resume..."
     quit_text = "Or press 'Q' to quit"
     
@@ -877,10 +874,10 @@ def show_pause_screen(stdscr):
     if key == ord('q') or key == ord('Q'):
         exit(0)
     
-    # Restore normal state when unpausing
+    # restore normal state when unpausing
     is_paused = False
     
-    # Restore music volume to normal
+    # restore music volume to normal
     if sound_enabled and sound_on:
         try:
             pygame.mixer.music.set_volume(vol)  # Restore original volume
@@ -900,7 +897,7 @@ def main(stdscr):
     curses.curs_set(0)
     global level, total_lines, combo_count, last_action_was_clear, can_hold
     
-    # Initialize sound with selected music
+    # initialize sound with selected music
     init_sound(getattr(args, 'music', None))
     
     setup_colors()
