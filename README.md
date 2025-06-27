@@ -48,6 +48,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 - Standard Python libraries: `curses`, `random`, `argparse`, `math`
 - Terminal with adequate size
 - `polyshapes.py` file in the same directory
+- [optional] pygame library and `/music` folder to support audio
 
 ### Running the Game
 
