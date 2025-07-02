@@ -58,6 +58,12 @@ n_is 4 -m         # Tetris with Tris and Dis pieces included
 n-is
 ```
 
+or
+
+```
+n_is
+```
+
 ## Game Controls
 
 ### Movement & Rotation
