@@ -64,6 +64,12 @@ This will automatically install dependencies, the game can be run with:
 n_is
 ```
 
+or
+
+```bash
+n-is
+```
+
 #### Installing numpy and pygame:
 
 Simply use pip:
