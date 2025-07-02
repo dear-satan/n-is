@@ -1,3 +1,2 @@
-git clone https://github.com/Jakub314159265/n-is.git
-cd n-is
-python n-is.py
+pip install n_is_python
+n_is
