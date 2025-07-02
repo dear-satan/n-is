@@ -1,6 +1,7 @@
 # N-is: A Generalized Tetris Game
 
 N-is is a terminal-based puzzle game that generalizes the classic Tetris concept to work with polyominos and polykings of any size from 1 to 6 blocks. Play traditional Tetris (4 blocks) or experiment with Tris (3 blocks), Dis (2 blocks), Pentis (5 blocks), or even Hexis (6 blocks)!
+Made for [Sumer of Making](https://summer.hackclub.com/)
 
 ## Features
 
@@ -46,11 +47,15 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 **Examples:**
 ```bash
-python n-is.py              # Interactive menu
-python n-is.py 4            # Classic Tetris
-python n-is.py 3 -e         # Tris with polykings
-python n-is.py 5 -c g -bc 0 # Green Pentis on black background
-python n-is.py 4 -m         # Tetris with Tris and Dis pieces included
+n_is              # Interactive menu
+n_is 4            # Classic Tetris
+n_is 3 -e         # Tris with polykings
+n_is 5 -c g -bc 0 # Green Pentis on black background
+n_is 4 -m         # Tetris with Tris and Dis pieces included
+```
+## How to run:
+```
+n-is
 ```
 
 ## Game Controls

@@ -52,6 +52,18 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 ### Running the Game
 
+#### Installing using numpy:
+
+```bash
+pip install n_is_python
+```
+
+This will automatically install dependencies, the game can be run with:
+
+```bash
+n_is
+```
+
 #### Installing numpy and pygame:
 
 Simply use pip:
@@ -60,7 +72,7 @@ Simply use pip:
 pip install pygame numpy
 ```
 
-#### Interactive Mode (Recommended)
+#### Interactive Mode
 
 Simply run the game without arguments to access the interactive menu:
 
