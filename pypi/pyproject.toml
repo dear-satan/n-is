@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "n_is_python"
-version = "0.0.1"
+version = "0.0.3"
 authors = [
   { name="Dear_satan", email="jakubj1406@gmail.com" },
 ]
@@ -21,3 +21,6 @@ license-files = ["LICEN[CS]E*", "LICENSE-MUSIC"]
 [project.urls]
 Homepage = "https://github.com/Jakub314159265/n-is"
 Issues = "https://github.com/Jakub314159265/n-is/issues"
+
+[project.scripts]
+mygame = "n_is.n_is:run"

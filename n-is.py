@@ -1121,8 +1121,7 @@ def main(stdscr):
     show_game_over_screen(stdscr, score)
     cleanup_sound()
 
-
-if __name__ == "__main__":
+def run():
     try:
         curses.wrapper(main)
     except curses.error as e:
@@ -1134,3 +1133,6 @@ if __name__ == "__main__":
         cleanup_sound()
     finally:
         cleanup_sound()
+
+if __name__ == "__main__":
+    run()
