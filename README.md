@@ -52,7 +52,7 @@ N-is is a terminal-based puzzle game that generalizes the classic Tetris concept
 
 ### Running the Game
 
-#### Installing using numpy:
+#### Installing using pip:
 
 ```bash
 pip install n_is_python
