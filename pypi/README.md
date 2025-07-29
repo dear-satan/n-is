@@ -118,7 +118,7 @@ The game includes background music from the following sources:
 | Operating System | Status | Notes |
 |------------------|--------|-------|
 | Linux | ✅ Fully Supported | Tested on Fedora 42 |
-| Windows 11 | ✅ Supported | Works with modern Python installations |
+| Windows 11 | ❌️ wont work on windows because of lack of support with curses library|
 | macOS | ❓ Expected to work | Unix-compatible, but untested |
 
 ## Troubleshooting
